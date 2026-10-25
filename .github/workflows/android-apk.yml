@@ -1,0 +1,14 @@
+name: Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    uses: ./.github/workflows/build-apk.yml
+    permissions:
+      contents: write

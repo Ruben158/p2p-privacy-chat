@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "P2P Messenger",
+    "slug": "p2p-messenger",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "backgroundColor": "#081417"
+    },
+    "scheme": "p2p-messenger",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "permissions": ["CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
