@@ -167,6 +167,55 @@ function isSecurePayload(value: unknown): value is SecurePayload {
   const payload = value as Record<string, unknown>;
   if (payload.kind === 'hello') return true;
   if (payload.kind === 'typing') return typeof payload.active === 'boolean';
+  if (
+    payload.kind === 'call-offer' ||
+    payload.kind === 'call-answer' ||
+    payload.kind === 'call-candidate' ||
+    payload.kind === 'call-reject' ||
+    payload.kind === 'call-end'
+  ) {
+    if (
+      typeof payload.callId !== 'string' ||
+      payload.callId.length === 0 ||
+      payload.callId.length > 80
+    ) {
+      return false;
+    }
+    if (payload.kind === 'call-offer') {
+      return (
+        (payload.mode === 'voice' || payload.mode === 'video') &&
+        typeof payload.sdp === 'string' &&
+        payload.sdp.length > 0 &&
+        payload.sdp.length <= 100_000
+      );
+    }
+    if (payload.kind === 'call-answer') {
+      return (
+        typeof payload.sdp === 'string' &&
+        payload.sdp.length > 0 &&
+        payload.sdp.length <= 100_000
+      );
+    }
+    if (payload.kind === 'call-candidate') {
+      if (typeof payload.candidate !== 'object' || payload.candidate === null) {
+        return false;
+      }
+      const candidate = payload.candidate as Record<string, unknown>;
+      return (
+        typeof candidate.candidate === 'string' &&
+        candidate.candidate.length > 0 &&
+        candidate.candidate.length <= 4096 &&
+        (candidate.sdpMid === undefined ||
+          candidate.sdpMid === null ||
+          (typeof candidate.sdpMid === 'string' && candidate.sdpMid.length <= 100)) &&
+        (candidate.sdpMLineIndex === undefined ||
+          candidate.sdpMLineIndex === null ||
+          (typeof candidate.sdpMLineIndex === 'number' &&
+            Number.isInteger(candidate.sdpMLineIndex)))
+      );
+    }
+    return true;
+  }
   if (payload.kind === 'ack' || payload.kind === 'read') {
     return (
       typeof payload.messageId === 'string' &&

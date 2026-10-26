@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import CallOverlay from '@/components/CallOverlay';
 import { MessengerProvider } from '@/context/MessengerContext';
 import {
   Inter_400Regular,
@@ -59,6 +60,7 @@ export default function RootLayout() {
             <KeyboardProvider>
             <MessengerProvider>
               <RootLayoutNav />
+                <CallOverlay />
             </MessengerProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

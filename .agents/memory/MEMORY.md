@@ -1,0 +1,1 @@
+- [Android APK builds](android-apk-builds.md) — Java 17 is not enough; check for Android SDK, then use remote CI if unavailable locally.

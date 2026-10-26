@@ -23,6 +23,9 @@ prerelease.
   signaling. They are not the message store, but can observe connection
   metadata.
 - Message contents are signed and encrypted before they leave the device.
+- A friend can scan the invite QR from the Contacts screen or Privacy settings.
+- Voice and video calls use WebRTC media. The offer, answer, and ICE signaling
+  travel inside the existing signed, encrypted P2P chat connection.
 - Contacts, chat history, identity keys, and the outbox are stored locally.
   Local chat history and identity keys are **not encrypted at rest**; protect
   the device with its screen lock.
@@ -32,7 +35,8 @@ prerelease.
   is available. It is not a server-side mailbox, so the sender must be online
   for delivery.
 - No TURN relay is configured. Some restrictive networks may prevent a direct
-  WebRTC connection.
+  WebRTC connection or call. Both people need the app open and online to receive
+  a call; there is no push-notification service.
 - Images and voice notes are limited to 5 MB each to fit the direct transport.
 - This project has not had an independent cryptographic audit.
 

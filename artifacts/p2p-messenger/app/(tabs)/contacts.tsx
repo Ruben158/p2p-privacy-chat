@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import InviteQr from '@/components/InviteQr';
 import QrScanner from '@/components/QrScanner';
 import { useColors } from '@/hooks/useColors';
 import { useMessenger } from '@/context/MessengerContext';
-import { parseInvite } from '@/lib/encoding';
+import { makeInvite, parseInvite } from '@/lib/encoding';
 import type { Contact } from '@/lib/types';
 
 function avatarText(name: string) {
@@ -29,12 +31,15 @@ function avatarText(name: string) {
 export default function ContactsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { contacts, connectionStatus, addContact, removeContact } = useMessenger();
+  const { identity, contacts, connectionStatus, addContact, removeContact } = useMessenger();
   const [modalOpen, setModalOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [myQrOpen, setMyQrOpen] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [invite, setInvite] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const myInvite = identity ? makeInvite(identity) : '';
 
   const filtered = useMemo(
     () =>
@@ -66,6 +71,15 @@ export default function ContactsScreen() {
     [addFromText],
   );
   const closeScanner = useCallback(() => setScannerOpen(false), []);
+  const copyMyInvite = async () => {
+    try {
+      await Clipboard.setStringAsync(myInvite);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 1800);
+    } catch {
+      Alert.alert('Copy unavailable', 'You can scan the QR code directly from this screen.');
+    }
+  };
 
   const confirmRemove = (contact: Contact) => {
     Alert.alert(
@@ -129,13 +143,22 @@ export default function ContactsScreen() {
           <Text style={[styles.eyebrow, { color: colors.primary }]}>YOUR TRUSTED CIRCLE</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Contacts</Text>
         </View>
-        <Pressable
-          accessibilityLabel="Add a contact"
-          onPress={() => { setError(null); setModalOpen(true); }}
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-        >
-          <Feather name="plus" size={20} color={colors.primaryForeground} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Show my invite QR code"
+            onPress={() => setMyQrOpen(true)}
+            style={styles.qrButton}
+          >
+            <MaterialCommunityIcons name="qrcode" size={22} color={colors.primary} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Add a contact"
+            onPress={() => { setError(null); setModalOpen(true); }}
+            style={[styles.addButton, { backgroundColor: colors.primary }]}
+          >
+            <Feather name="plus" size={20} color={colors.primaryForeground} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -242,6 +265,58 @@ export default function ContactsScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={myQrOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMyQrOpen(false)}
+      >
+        <View style={[styles.modalShade, { backgroundColor: 'rgba(0,0,0,0.72)' }]}>
+          <View
+            style={[
+              styles.modal,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                paddingBottom: Math.max(insets.bottom, 20) + 18,
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Your invite QR</Text>
+                <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
+                  Let a friend scan this to add you.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close invite QR"
+                onPress={() => setMyQrOpen(false)}
+              >
+                <Feather name="x" size={21} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+            <View style={styles.myQrBody}>
+              <InviteQr value={myInvite} size={210} />
+              <Text style={[styles.qrName, { color: colors.foreground }]}>
+                {identity?.displayName ?? 'P2P Messenger'}
+              </Text>
+              <Text style={[styles.tip, { color: colors.mutedForeground }]}>
+                The invite contains your signed public keys. Your private keys are never shared.
+              </Text>
+              <Pressable
+                onPress={() => void copyMyInvite()}
+                style={[styles.submit, { backgroundColor: colors.secondary }]}
+              >
+                <Text style={[styles.submitText, { color: colors.foreground }]}>
+                  {inviteCopied ? 'Invite link copied' : 'Copy invite link'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -252,6 +327,8 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.7, marginBottom: 3 },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
   addButton: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  qrButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   search: { marginHorizontal: 20, marginTop: 17, height: 46, borderRadius: 15, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   searchInput: { flex: 1, paddingVertical: 0, fontSize: 14 },
   list: { paddingHorizontal: 20 },
@@ -282,5 +359,7 @@ const styles = StyleSheet.create({
   tip: { fontSize: 11, lineHeight: 17, marginTop: -5 },
   submit: { minHeight: 51, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   submitText: { fontSize: 14, fontWeight: '800' },
+  myQrBody: { alignItems: 'center', gap: 12, paddingTop: 5 },
+  qrName: { fontSize: 17, fontWeight: '800' },
   error: { fontSize: 12, lineHeight: 17, textAlign: 'center' },
 });

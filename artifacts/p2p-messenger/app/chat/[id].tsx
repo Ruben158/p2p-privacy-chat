@@ -44,6 +44,7 @@ export default function ChatScreen() {
     sendAttachment,
     sendTyping,
     markIncomingRead,
+    startCall,
   } = useMessenger();
   const contact = contacts.find((item) => item.id === contactId);
   const chatMessages = useMemo(
@@ -112,6 +113,18 @@ export default function ChatScreen() {
       Alert.alert('Message not sent', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleStartCall = async (mode: 'voice' | 'video') => {
+    if (!contactId) return;
+    try {
+      await startCall(contactId, mode);
+    } catch (error) {
+      Alert.alert(
+        'Call could not start',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
     }
   };
 
@@ -302,6 +315,22 @@ export default function ChatScreen() {
           </View>
         </View>
         <Pressable
+          accessibilityLabel="Start voice call"
+          disabled={status !== 'connected'}
+          onPress={() => void handleStartCall('voice')}
+          style={[styles.callButton, { opacity: status === 'connected' ? 1 : 0.42 }]}
+        >
+          <Feather name="phone-call" size={18} color={colors.primary} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Start video call"
+          disabled={status !== 'connected'}
+          onPress={() => void handleStartCall('video')}
+          style={[styles.callButton, { opacity: status === 'connected' ? 1 : 0.42 }]}
+        >
+          <Feather name="video" size={19} color={colors.primary} />
+        </Pressable>
+        <Pressable
           accessibilityLabel="Verify security number"
           onPress={() => router.push({ pathname: '/chat/verify/[id]', params: { id: contact.id } })}
           style={styles.verifyButton}
@@ -420,7 +449,8 @@ const styles = StyleSheet.create({
   statusLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   connectionText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.1 },
-  verifyButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  callButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
+  verifyButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
   networkWarning: { marginHorizontal: 14, marginTop: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8, flexDirection: 'row', gap: 7, alignItems: 'center' },
   warningText: { flex: 1, fontSize: 10, lineHeight: 15 },
   messageList: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 13, paddingTop: 12, paddingBottom: 16 },

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { DirectCallManager } from '@/lib/call-manager';
 import { createLocalIdentity, openEnvelope, randomId, sealPayload } from '@/lib/crypto';
 import { contactFromInvite } from '@/lib/encoding';
 import {
@@ -25,6 +26,9 @@ import {
 } from '@/lib/storage';
 import { P2PManager } from '@/lib/transport';
 import type {
+  ActiveCall,
+  CallMode,
+  CallSignal,
   ChatMessage,
   ConnectionStatus,
   Contact,
@@ -46,6 +50,8 @@ interface MessengerContextValue {
   typing: Record<string, boolean>;
   networkErrors: Record<string, string>;
   storageError: string | null;
+  activeCall: ActiveCall | null;
+  callError: string | null;
   createIdentity(displayName: string): Promise<void>;
   restoreIdentity(identity: LocalIdentity): Promise<void>;
   addContact(identity: PublicIdentity): Promise<Contact>;
@@ -54,6 +60,13 @@ interface MessengerContextValue {
   sendAttachment(contactId: string, file: File, kind: 'image' | 'audio'): Promise<void>;
   sendTyping(contactId: string, active: boolean): Promise<void>;
   markIncomingRead(contactId: string): Promise<void>;
+  startCall(contactId: string, mode: CallMode): Promise<void>;
+  acceptCall(): Promise<void>;
+  declineCall(): Promise<void>;
+  endCall(): Promise<void>;
+  toggleCallMicrophone(): void;
+  toggleCallCamera(): void;
+  clearCallError(): void;
   wipe(): Promise<void>;
 }
 
@@ -91,6 +104,8 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
   const [typing, setTyping] = useState<Record<string, boolean>>({});
   const [networkErrors, setNetworkErrors] = useState<Record<string, string>>({});
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
   const managerRef = useRef<P2PManager | null>(null);
   const identityRef = useRef<LocalIdentity | null>(null);
   const contactsRef = useRef<Contact[]>([]);
@@ -100,7 +115,30 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
   const controlSenderRef = useRef<
     (contactId: string, payload: SecurePayload) => Promise<void>
   >(async () => undefined);
+  const callManagerRef = useRef<DirectCallManager | null>(null);
   const flushingRef = useRef(new Set<string>());
+
+  if (callManagerRef.current === null) {
+    callManagerRef.current = new DirectCallManager(
+      async (contactId, signal) => {
+        const localIdentity = identityRef.current;
+        const contact = contactsRef.current.find((item) => item.id === contactId);
+        if (!localIdentity || !contact || !managerRef.current) {
+          throw new Error('The direct chat connection is no longer available.');
+        }
+        const sent = await managerRef.current.send(
+          contactId,
+          sealPayload(localIdentity, contact, signal),
+        );
+        if (!sent) throw new Error('The direct chat connection was lost. Try again.');
+      },
+      setActiveCall,
+      (contactId, message) => {
+        setCallError(message);
+        setNetworkErrors((current) => ({ ...current, [contactId]: message }));
+      },
+    );
+  }
 
   useEffect(() => {
     identityRef.current = identity;
@@ -205,6 +243,16 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
         }
         const updated = await updateMessage(payload.messageId, { status: 'read' });
         if (updated) setMessages((current) => mergeMessage(current, updated));
+        return;
+      }
+      if (
+        payload.kind === 'call-offer' ||
+        payload.kind === 'call-answer' ||
+        payload.kind === 'call-candidate' ||
+        payload.kind === 'call-reject' ||
+        payload.kind === 'call-end'
+      ) {
+        await callManagerRef.current?.handleSignal(contactId, payload as CallSignal);
         return;
       }
 
@@ -391,7 +439,41 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
     [sendControl],
   );
 
+  const startCall = useCallback(
+    async (contactId: string, mode: CallMode) => {
+      setCallError(null);
+      if (connectionStatus[contactId] !== 'connected') {
+        throw new Error('Wait for the encrypted direct connection before calling.');
+      }
+      await callManagerRef.current?.start(contactId, mode);
+    },
+    [connectionStatus],
+  );
+
+  const acceptCall = useCallback(async () => {
+    await callManagerRef.current?.accept();
+  }, []);
+
+  const declineCall = useCallback(async () => {
+    await callManagerRef.current?.decline();
+  }, []);
+
+  const endCall = useCallback(async () => {
+    await callManagerRef.current?.end();
+  }, []);
+
+  const toggleCallMicrophone = useCallback(() => {
+    callManagerRef.current?.toggleMicrophone();
+  }, []);
+
+  const toggleCallCamera = useCallback(() => {
+    callManagerRef.current?.toggleCamera();
+  }, []);
+
+  const clearCallError = useCallback(() => setCallError(null), []);
+
   const wipe = useCallback(async () => {
+    callManagerRef.current?.dispose();
     await managerRef.current?.stop();
     managerRef.current = null;
     await wipeLocalData();
@@ -402,6 +484,7 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
     setTyping({});
     setNetworkErrors({});
     setStorageError(null);
+    setCallError(null);
   }, []);
 
   const value = useMemo<MessengerContextValue>(
@@ -414,6 +497,8 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
       typing,
       networkErrors,
       storageError,
+      activeCall,
+      callError,
       createIdentity,
       restoreIdentity,
       addContact,
@@ -422,6 +507,13 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
       sendAttachment,
       sendTyping,
       markIncomingRead,
+      startCall,
+      acceptCall,
+      declineCall,
+      endCall,
+      toggleCallMicrophone,
+      toggleCallCamera,
+      clearCallError,
       wipe,
     }),
     [
@@ -433,6 +525,8 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
       typing,
       networkErrors,
       storageError,
+      activeCall,
+      callError,
       createIdentity,
       restoreIdentity,
       addContact,
@@ -441,6 +535,13 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
       sendAttachment,
       sendTyping,
       markIncomingRead,
+      startCall,
+      acceptCall,
+      declineCall,
+      endCall,
+      toggleCallMicrophone,
+      toggleCallCamera,
+      clearCallError,
       wipe,
     ],
   );
