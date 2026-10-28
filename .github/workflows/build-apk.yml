@@ -25,11 +25,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Set up Java 21
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -45,6 +45,40 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Patch Capacitor CLI for tar v7 and JSON config
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          for p in Path("node_modules").rglob("*/@capacitor/cli/dist/util/template.js"):
+              text = p.read_text()
+              patched = text.replace(
+                  "tar_1.default.extract(",
+                  "(tar_1.default?.extract || tar_1.extract || require('tar').extract)(",
+              )
+              p.write_text(patched)
+              print(f"Patched {p}")
+
+          app_dir = Path("artifacts/p2p-messenger")
+          ts_cfg = app_dir / "capacitor.config.ts"
+          json_cfg = app_dir / "capacitor.config.json"
+          json_cfg.write_text(
+              json.dumps(
+                  {
+                      "appId": "app.p2pmessenger.mobile",
+                      "appName": "P2P Messenger",
+                      "webDir": "dist",
+                      "server": {"androidScheme": "https"},
+                  },
+                  indent=2,
+              )
+              + "\n"
+          )
+          if ts_cfg.exists():
+              ts_cfg.unlink()
+          PY
 
       - name: Export the Expo web app
         run: pnpm --filter @workspace/p2p-messenger run build:web
