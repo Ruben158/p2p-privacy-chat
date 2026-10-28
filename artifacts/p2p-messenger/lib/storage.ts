@@ -203,6 +203,15 @@ export async function getOutboxForContact(contactId: string): Promise<OutboxItem
   return items.sort((a, b) => a.createdAt - b.createdAt);
 }
 
+export async function getAllOutboxItems(): Promise<OutboxItem[]> {
+  if (!isBrowser()) {
+    const outbox = await nativeGet<OutboxItem[]>('outbox', []);
+    return outbox.sort((a, b) => a.createdAt - b.createdAt);
+  }
+  const items = await (await getDatabase()).getAll('outbox');
+  return items.sort((a, b) => a.createdAt - b.createdAt);
+}
+
 export async function removeOutboxItem(itemId: string): Promise<void> {
   if (!isBrowser()) {
     const outbox = await nativeGet<OutboxItem[]>('outbox', []);

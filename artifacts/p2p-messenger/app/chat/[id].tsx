@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,9 +17,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AudioControl from '@/components/AudioControl';
+import ConnectionBanner from '@/components/ConnectionBanner';
 import { useColors } from '@/hooks/useColors';
 import { useMessenger } from '@/context/MessengerContext';
-import type { ChatMessage, Contact } from '@/lib/types';
+import type { ChatMessage } from '@/lib/types';
 
 function timeLabel(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], {
@@ -34,18 +35,18 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Array.isArray(id) ? id[0] : id;
   const {
-    identity,
     contacts,
     messages,
     connectionStatus,
     typing,
-    networkErrors,
     sendText,
     sendAttachment,
     sendTyping,
     markIncomingRead,
+    setActiveChatContact,
     startCall,
   } = useMessenger();
+
   const contact = contacts.find((item) => item.id === contactId);
   const chatMessages = useMemo(
     () => messages.filter((message) => message.contactId === contactId),
@@ -66,6 +67,13 @@ export default function ChatScreen() {
   }, [sendTyping]);
 
   useEffect(() => {
+    setActiveChatContact(contactId ?? null);
+    return () => {
+      setActiveChatContact(null);
+    };
+  }, [contactId, setActiveChatContact]);
+
+  useEffect(() => {
     if (contactId) void markIncomingRead(contactId);
   }, [contactId, chatMessages.length, markIncomingRead]);
 
@@ -77,13 +85,10 @@ export default function ChatScreen() {
     };
   }, [contactId, typingSent]);
 
-  const status = contactId ? connectionStatus[contactId] ?? 'searching' : 'offline';
-  const statusLabel =
-    status === 'connected'
-      ? 'Direct P2P connected · encrypted'
-      : status === 'offline'
-        ? 'Peer offline · queued on this device'
-        : 'Searching DHT / signaling…';
+  const status = contactId
+    ? connectionStatus[contactId] ?? 'searching'
+    : 'offline';
+  const isConnected = status === 'connected';
 
   const handleDraftChange = (value: string) => {
     setDraft(value);
@@ -110,7 +115,10 @@ export default function ChatScreen() {
     try {
       await sendText(contactId, message);
     } catch (error) {
-      Alert.alert('Message not sent', error instanceof Error ? error.message : 'Try again.');
+      Alert.alert(
+        'Message not sent',
+        error instanceof Error ? error.message : 'Try again.',
+      );
     } finally {
       setSending(false);
     }
@@ -148,14 +156,20 @@ export default function ChatScreen() {
       }
       await sendAttachment(contactId, file, 'image');
     } catch (error) {
-      Alert.alert('Photo not sent', error instanceof Error ? error.message : 'Try again.');
+      Alert.alert(
+        'Photo not sent',
+        error instanceof Error ? error.message : 'Try again.',
+      );
     }
   };
 
   const handleVoiceNote = async () => {
     if (!contactId) return;
     if (Platform.OS !== 'web') {
-      Alert.alert('Voice notes', 'Record voice notes in the Capacitor Android app or browser version.');
+      Alert.alert(
+        'Voice notes',
+        'Record voice notes in the Capacitor Android app or browser version.',
+      );
       return;
     }
     if (recorderRef.current?.state === 'recording') {
@@ -163,8 +177,13 @@ export default function ChatScreen() {
       return;
     }
     try {
-      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        throw new Error('This device browser does not support audio recording.');
+      if (
+        !navigator.mediaDevices?.getUserMedia ||
+        typeof MediaRecorder === 'undefined'
+      ) {
+        throw new Error(
+          'This device browser does not support audio recording.',
+        );
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
@@ -186,27 +205,45 @@ export default function ChatScreen() {
         const file = new File([blob], `voice-note-${Date.now()}.webm`, {
           type: blob.type || 'audio/webm',
         });
-        void sendAttachment(contactId, file, 'audio').catch((error: unknown) => {
-          Alert.alert('Voice note not sent', error instanceof Error ? error.message : 'Try again.');
-        });
+        void sendAttachment(contactId, file, 'audio').catch(
+          (error: unknown) => {
+            Alert.alert(
+              'Voice note not sent',
+              error instanceof Error ? error.message : 'Try again.',
+            );
+          },
+        );
       };
       recorder.start();
       setRecording(true);
     } catch (error) {
-      Alert.alert('Microphone unavailable', error instanceof Error ? error.message : 'Allow microphone access and try again.');
+      Alert.alert(
+        'Microphone unavailable',
+        error instanceof Error
+          ? error.message
+          : 'Allow microphone access and try again.',
+      );
     }
   };
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const mine = item.direction === 'outgoing';
     const bubbleColor = mine ? colors.accent : colors.card;
+    const bubbleBorder = mine ? 'rgba(16, 185, 129, 0.28)' : colors.border;
+
     return (
-      <View style={[styles.messageLine, mine ? styles.messageMine : styles.messageTheirs]}>
+      <View
+        style={[
+          styles.messageLine,
+          mine ? styles.messageMine : styles.messageTheirs,
+        ]}
+      >
         <View
           style={[
             styles.bubble,
             {
               backgroundColor: bubbleColor,
+              borderColor: bubbleBorder,
               borderBottomRightRadius: mine ? 5 : 18,
               borderBottomLeftRadius: mine ? 18 : 5,
             },
@@ -234,32 +271,38 @@ export default function ChatScreen() {
             </Text>
           ) : null}
           <View style={styles.messageMeta}>
-            <Text style={[styles.messageTime, { color: colors.mutedForeground }]}>
+            <Text
+              style={[styles.messageTime, { color: colors.mutedForeground }]}
+            >
               {timeLabel(item.createdAt)}
             </Text>
             {mine ? (
-              <Text
-                accessibilityLabel={
-                  item.status === 'queued'
-                    ? 'Queued locally'
+              <View style={styles.statusChip}>
+                <Text
+                  accessibilityLabel={
+                    item.status === 'queued'
+                      ? 'Queued locally'
+                      : item.status === 'read'
+                        ? 'Read'
+                        : 'Delivered directly'
+                  }
+                  style={[
+                    styles.messageTick,
+                    {
+                      color:
+                        item.status === 'queued'
+                          ? '#F59E0B'
+                          : colors.primary,
+                    },
+                  ]}
+                >
+                  {item.status === 'queued'
+                    ? '✓ Queued'
                     : item.status === 'read'
-                      ? 'Read'
-                      : 'Delivered directly'
-                }
-                style={[
-                  styles.messageTick,
-                  {
-                    color:
-                      item.status === 'queued'
-                        ? colors.mutedForeground
-                        : colors.primary,
-                  },
-                ]}
-              >
-                {item.status === 'queued' ? '✓' : '✓✓'}
-              </Text>
-            ) : item.readAt ? (
-              <MaterialCommunityIcons name="eye-check-outline" size={12} color={colors.primary} />
+                      ? '✓✓ Read'
+                      : '✓✓ Delivered'}
+                </Text>
+              </View>
             ) : null}
           </View>
         </View>
@@ -270,7 +313,9 @@ export default function ChatScreen() {
   if (!contact) {
     return (
       <View style={[styles.notFound, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.foreground }}>This contact is not available on this device.</Text>
+        <Text style={{ color: colors.foreground }}>
+          This contact is not available on this device.
+        </Text>
         <Pressable onPress={() => router.back()} style={{ padding: 15 }}>
           <Text style={{ color: colors.primary }}>Go back</Text>
         </Pressable>
@@ -284,13 +329,21 @@ export default function ChatScreen() {
       behavior="padding"
       keyboardVerticalOffset={0}
     >
-      <View style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12), borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.chatHeader,
+          {
+            paddingTop: Math.max(insets.top, 12) + 4,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
         <Pressable
           onPress={() => router.back()}
           accessibilityLabel="Back to chats"
           style={styles.backButton}
         >
-          <Feather name="arrow-left" size={22} color={colors.foreground} />
+          <Feather name="arrow-left" size={21} color={colors.foreground} />
         </Pressable>
         <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
           <Text style={[styles.avatarText, { color: colors.accentForeground }]}>
@@ -299,54 +352,98 @@ export default function ChatScreen() {
           <View
             style={[
               styles.dot,
-              { backgroundColor: status === 'connected' ? colors.primary : colors.mutedForeground, borderColor: colors.background },
+              {
+                backgroundColor: isConnected
+                  ? colors.primary
+                  : status === 'searching'
+                    ? '#F59E0B'
+                    : colors.mutedForeground,
+                borderColor: colors.background,
+              },
             ]}
           />
         </View>
         <View style={styles.headerCopy}>
-          <Text numberOfLines={1} style={[styles.contactName, { color: colors.foreground }]}>
+          <Text
+            numberOfLines={1}
+            style={[styles.contactName, { color: colors.foreground }]}
+          >
             {contact.displayName}
           </Text>
           <View style={styles.statusLine}>
-            <View style={[styles.statusDot, { backgroundColor: status === 'connected' ? colors.primary : status === 'offline' ? colors.mutedForeground : '#F4B95F' }]} />
-            <Text numberOfLines={1} style={[styles.connectionText, { color: status === 'connected' ? colors.primary : colors.mutedForeground }]}>
-              {statusLabel}
+            <MaterialCommunityIcons
+              name="shield-lock"
+              size={11}
+              color={colors.primary}
+            />
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.connectionText,
+                {
+                  color: isConnected ? colors.primary : colors.mutedForeground,
+                },
+              ]}
+            >
+              {isConnected
+                ? 'E2EE · Direct P2P Tunnel'
+                : 'E2EE · Waiting for Peer'}
             </Text>
           </View>
         </View>
+
         <Pressable
           accessibilityLabel="Start voice call"
-          disabled={status !== 'connected'}
+          disabled={!isConnected}
           onPress={() => void handleStartCall('voice')}
-          style={[styles.callButton, { opacity: status === 'connected' ? 1 : 0.42 }]}
+          style={[
+            styles.headerActionBtn,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              opacity: isConnected ? 1 : 0.42,
+            },
+          ]}
         >
-          <Feather name="phone-call" size={18} color={colors.primary} />
+          <Feather name="phone-call" size={16} color={colors.primary} />
         </Pressable>
         <Pressable
           accessibilityLabel="Start video call"
-          disabled={status !== 'connected'}
+          disabled={!isConnected}
           onPress={() => void handleStartCall('video')}
-          style={[styles.callButton, { opacity: status === 'connected' ? 1 : 0.42 }]}
+          style={[
+            styles.headerActionBtn,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              opacity: isConnected ? 1 : 0.42,
+            },
+          ]}
         >
-          <Feather name="video" size={19} color={colors.primary} />
+          <Feather name="video" size={17} color={colors.primary} />
         </Pressable>
         <Pressable
           accessibilityLabel="Verify security number"
-          onPress={() => router.push({ pathname: '/chat/verify/[id]', params: { id: contact.id } })}
-          style={styles.verifyButton}
+          onPress={() =>
+            router.push({
+              pathname: '/chat/verify/[id]',
+              params: { id: contact.id },
+            })
+          }
+          style={[
+            styles.headerActionBtn,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
         >
-          <MaterialCommunityIcons name="shield-check-outline" size={21} color={colors.primary} />
+          <MaterialCommunityIcons
+            name="shield-check-outline"
+            size={18}
+            color={colors.primary}
+          />
         </Pressable>
       </View>
 
-      {networkErrors[contact.id] && status !== 'connected' ? (
-        <View style={[styles.networkWarning, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="info" size={14} color={colors.mutedForeground} />
-          <Text style={[styles.warningText, { color: colors.mutedForeground }]}>
-            Signaling is still being attempted. A direct path depends on both peers’ network settings.
-          </Text>
-        </View>
-      ) : null}
+      <ConnectionBanner contactId={contact.id} compact />
 
       <FlatList
         inverted
@@ -361,18 +458,44 @@ export default function ChatScreen() {
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <View style={styles.emptyChat}>
-            <View style={[styles.lockIcon, { backgroundColor: colors.card }]}>
-              <MaterialCommunityIcons name="lock-outline" size={22} color={colors.primary} />
+            <View
+              style={[
+                styles.lockIcon,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="lock-check-outline"
+                size={24}
+                color={colors.primary}
+              />
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>A private chat with {contact.displayName}</Text>
-            <Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>
-              Messages are encrypted for this contact. Check the safety number together before sharing sensitive details.
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+              End-to-End Encrypted with {contact.displayName}
+            </Text>
+            <Text
+              style={[styles.emptyCopy, { color: colors.mutedForeground }]}
+            >
+              Messages are encrypted on your device using X25519 + Ed25519 keys.
+              If {contact.displayName} is offline, messages queue locally and
+              deliver automatically the moment both apps are open.
             </Text>
           </View>
         }
         ListHeaderComponent={
           typing[contact.id] ? (
-            <Text style={[styles.typing, { color: colors.mutedForeground }]}>{contact.displayName} is typing…</Text>
+            <View
+              style={[
+                styles.typingPill,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text
+                style={[styles.typingText, { color: colors.primary }]}
+              >
+                {contact.displayName} is typing…
+              </Text>
+            </View>
           ) : null
         }
       />
@@ -381,31 +504,45 @@ export default function ChatScreen() {
         style={[
           styles.composerWrap,
           {
+            backgroundColor: '#0A1417',
             borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 8),
+            paddingBottom: Math.max(
+              insets.bottom,
+              Platform.OS === 'web' ? 24 : 10,
+            ),
           },
         ]}
       >
-        {status === 'offline' ? (
-          <View style={styles.queueNote}>
-            <MaterialCommunityIcons name="cloud-off-outline" size={13} color={colors.mutedForeground} />
-            <Text style={[styles.queueText, { color: colors.mutedForeground }]}>
-              Sent messages wait securely on this device
-            </Text>
-          </View>
-        ) : null}
         <View style={styles.composerRow}>
-          <Pressable onPress={() => void handleImage()} accessibilityLabel="Attach photo" style={styles.composerIcon}>
-            <Feather name="image" size={19} color={colors.mutedForeground} />
+          <Pressable
+            onPress={() => void handleImage()}
+            accessibilityLabel="Attach photo"
+            style={[
+              styles.composerIcon,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Feather name="image" size={18} color={colors.mutedForeground} />
           </Pressable>
           <TextInput
             value={draft}
             onChangeText={handleDraftChange}
-            placeholder="Message"
+            placeholder={
+              isConnected
+                ? 'Encrypted message…'
+                : 'Message (will send when connected)…'
+            }
             placeholderTextColor={colors.mutedForeground}
             multiline
             maxLength={4000}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                color: colors.foreground,
+              },
+            ]}
             accessibilityLabel="Message"
           />
           {draft.trim() ? (
@@ -413,21 +550,51 @@ export default function ChatScreen() {
               onPress={() => void handleSend()}
               disabled={sending}
               accessibilityLabel="Send message"
-              style={[styles.sendButton, { backgroundColor: colors.primary, opacity: sending ? 0.6 : 1 }]}
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: sending ? 0.6 : 1,
+                },
+              ]}
             >
               {sending ? (
-                <ActivityIndicator color={colors.primaryForeground} size="small" />
+                <ActivityIndicator
+                  color={colors.primaryForeground}
+                  size="small"
+                />
               ) : (
-                <Feather name="arrow-up" size={20} color={colors.primaryForeground} />
+                <Feather
+                  name="arrow-up"
+                  size={20}
+                  color={colors.primaryForeground}
+                />
               )}
             </Pressable>
           ) : (
             <Pressable
               onPress={() => void handleVoiceNote()}
-              accessibilityLabel={recording ? 'Stop voice note' : 'Record voice note'}
-              style={[styles.sendButton, { backgroundColor: recording ? colors.destructive : colors.primary }]}
+              accessibilityLabel={
+                recording ? 'Stop voice note' : 'Record voice note'
+              }
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: recording
+                    ? colors.destructive
+                    : colors.secondary,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                },
+              ]}
             >
-              <Feather name={recording ? 'square' : 'mic'} size={17} color={recording ? colors.destructiveForeground : colors.primaryForeground} />
+              <Feather
+                name={recording ? 'square' : 'mic'}
+                size={17}
+                color={
+                  recording ? colors.destructiveForeground : colors.primary
+                }
+              />
             </Pressable>
           )}
         </View>
@@ -439,41 +606,159 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   notFound: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  chatHeader: { minHeight: 68, paddingHorizontal: 12, paddingBottom: 10, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backButton: { width: 32, height: 40, justifyContent: 'center' },
-  avatar: { width: 40, height: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  chatHeader: {
+    minHeight: 64,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  backButton: {
+    width: 34,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarText: { fontSize: 15, fontWeight: '800' },
-  dot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, position: 'absolute', right: -1, bottom: -1 },
-  headerCopy: { flex: 1, gap: 4 },
+  dot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 2,
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+  },
+  headerCopy: { flex: 1, gap: 2 },
   contactName: { fontSize: 15, fontWeight: '800' },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  connectionText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.1 },
-  callButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
-  verifyButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
-  networkWarning: { marginHorizontal: 14, marginTop: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8, flexDirection: 'row', gap: 7, alignItems: 'center' },
-  warningText: { flex: 1, fontSize: 10, lineHeight: 15 },
-  messageList: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 13, paddingTop: 12, paddingBottom: 16 },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  connectionText: { fontSize: 10, fontWeight: '700' },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageList: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    paddingBottom: 16,
+  },
   emptyMessageList: { flex: 1 },
-  emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, transform: [{ scaleY: -1 }] },
-  lockIcon: { width: 54, height: 54, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  emptyTitle: { fontSize: 17, textAlign: 'center', fontWeight: '800' },
-  emptyCopy: { marginTop: 8, fontSize: 12, textAlign: 'center', lineHeight: 18 },
-  typing: { alignSelf: 'flex-start', fontSize: 11, paddingHorizontal: 8, paddingBottom: 9, transform: [{ scaleY: -1 }] },
+  emptyChat: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    transform: [{ scaleY: -1 }],
+  },
+  lockIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 16, textAlign: 'center', fontWeight: '800' },
+  emptyCopy: {
+    marginTop: 8,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  typingPill: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 8,
+    transform: [{ scaleY: -1 }],
+  },
+  typingText: { fontSize: 11, fontWeight: '700' },
   messageLine: { flexDirection: 'row', marginVertical: 4 },
   messageMine: { justifyContent: 'flex-end' },
   messageTheirs: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '84%', minWidth: 86, borderRadius: 18, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 6 },
-  attachmentImage: { width: 230, height: 190, borderRadius: 12, marginBottom: 4, backgroundColor: '#0A171A' },
+  bubble: {
+    maxWidth: '82%',
+    minWidth: 96,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingTop: 9,
+    paddingBottom: 7,
+  },
+  attachmentImage: {
+    width: 230,
+    height: 190,
+    borderRadius: 12,
+    marginBottom: 5,
+    backgroundColor: '#0A171A',
+  },
   messageText: { fontSize: 14, lineHeight: 20 },
-  messageMeta: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 5, marginTop: 3 },
-  messageTime: { fontSize: 9 },
-  messageTick: { fontSize: 12, fontWeight: '900', letterSpacing: -2 },
-  composerWrap: { borderTopWidth: 1, paddingHorizontal: 11, paddingTop: 8 },
-  queueNote: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, paddingBottom: 7 },
-  queueText: { fontSize: 10 },
-  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
-  composerIcon: { width: 37, height: 45, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, maxHeight: 130, minHeight: 44, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingTop: 11, paddingBottom: 10, fontSize: 14, textAlignVertical: 'center' },
-  sendButton: { width: 43, height: 43, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  messageMeta: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  messageTime: { fontSize: 9.5 },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  messageTick: { fontSize: 9.5, fontWeight: '800' },
+  composerWrap: {
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  composerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  composerIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  input: {
+    flex: 1,
+    maxHeight: 130,
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontSize: 14,
+    textAlignVertical: 'center',
+  },
+  sendButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

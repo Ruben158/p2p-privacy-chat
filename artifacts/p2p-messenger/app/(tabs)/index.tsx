@@ -10,9 +10,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import ConnectionBanner from '@/components/ConnectionBanner';
 import { useColors } from '@/hooks/useColors';
 import { useMessenger } from '@/context/MessengerContext';
-import type { Contact } from '@/lib/types';
+import type { ChatMessage, Contact } from '@/lib/types';
+
+type FilterKind = 'all' | 'online' | 'unread' | 'queued';
 
 function initials(name: string): string {
   return name
@@ -23,9 +26,25 @@ function initials(name: string): string {
 }
 
 function previewText(content: { kind: string; text?: string }): string {
-  if (content.kind === 'image') return 'Photo';
-  if (content.kind === 'audio') return 'Voice note';
+  if (content.kind === 'image') return '📷 Encrypted photo';
+  if (content.kind === 'audio') return '🎙️ Encrypted voice note';
   return content.text ?? 'Encrypted message';
+}
+
+function formatChatTime(timestamp: number): string {
+  const now = new Date();
+  const date = new Date(timestamp);
+  const isToday =
+    now.getFullYear() === date.getFullYear() &&
+    now.getMonth() === date.getMonth() &&
+    now.getDate() === date.getDate();
+  if (isToday) {
+    return date.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 export default function ChatsScreen() {
@@ -33,36 +52,77 @@ export default function ChatsScreen() {
   const insets = useSafeAreaInsets();
   const { contacts, messages, connectionStatus, identity } = useMessenger();
   const [search, setSearch] = useState('');
-  const latestByContact = useMemo(() => {
-    const latest = new Map<string, (typeof messages)[number]>();
-    for (const message of messages) latest.set(message.contactId, message);
-    return latest;
+  const [filter, setFilter] = useState<FilterKind>('all');
+
+  const statsByContact = useMemo(() => {
+    const latest = new Map<string, ChatMessage>();
+    const unread = new Map<string, number>();
+    const queued = new Map<string, number>();
+
+    for (const message of messages) {
+      latest.set(message.contactId, message);
+      if (message.direction === 'incoming' && !message.readAt) {
+        unread.set(message.contactId, (unread.get(message.contactId) ?? 0) + 1);
+      }
+      if (message.direction === 'outgoing' && message.status === 'queued') {
+        queued.set(message.contactId, (queued.get(message.contactId) ?? 0) + 1);
+      }
+    }
+    return { latest, unread, queued };
   }, [messages]);
+
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return [...contacts]
-      .filter((contact) => contact.displayName.toLocaleLowerCase().includes(query))
+      .filter((contact) => {
+        if (!contact.displayName.toLocaleLowerCase().includes(query)) {
+          return false;
+        }
+        if (filter === 'online') {
+          return connectionStatus[contact.id] === 'connected';
+        }
+        if (filter === 'unread') {
+          return (statsByContact.unread.get(contact.id) ?? 0) > 0;
+        }
+        if (filter === 'queued') {
+          return (statsByContact.queued.get(contact.id) ?? 0) > 0;
+        }
+        return true;
+      })
       .sort((left, right) => {
-        const leftTime = latestByContact.get(left.id)?.createdAt ?? left.addedAt;
-        const rightTime = latestByContact.get(right.id)?.createdAt ?? right.addedAt;
+        const leftTime =
+          statsByContact.latest.get(left.id)?.createdAt ?? left.addedAt;
+        const rightTime =
+          statsByContact.latest.get(right.id)?.createdAt ?? right.addedAt;
         return rightTime - leftTime;
       });
-  }, [contacts, latestByContact, search]);
-  const safeTop = Math.max(insets.top, 18);
+  }, [contacts, connectionStatus, filter, search, statsByContact]);
+
+  const safeTop = Math.max(insets.top, 16);
 
   const openContact = (contact: Contact) => {
     router.push({ pathname: '/chat/[id]', params: { id: contact.id } });
   };
 
   const renderContact = ({ item }: { item: Contact }) => {
-    const latest = latestByContact.get(item.id);
+    const latest = statsByContact.latest.get(item.id);
+    const unreadCount = statsByContact.unread.get(item.id) ?? 0;
+    const queuedCount = statsByContact.queued.get(item.id) ?? 0;
     const status = connectionStatus[item.id] ?? 'searching';
+    const isConnected = status === 'connected';
+
     return (
       <Pressable
         onPress={() => openContact(item)}
         style={({ pressed }) => [
-          styles.contactRow,
-          { borderBottomColor: colors.border, opacity: pressed ? 0.72 : 1 },
+          styles.contactCard,
+          {
+            backgroundColor: unreadCount > 0 ? '#112327' : colors.card,
+            borderColor: isConnected
+              ? 'rgba(16, 185, 129, 0.25)'
+              : colors.border,
+            opacity: pressed ? 0.78 : 1,
+          },
         ]}
         testID={`chat-${item.id}`}
       >
@@ -74,30 +134,66 @@ export default function ChatsScreen() {
             style={[
               styles.presenceDot,
               {
-                backgroundColor:
-                  status === 'connected' ? colors.primary : colors.mutedForeground,
-                borderColor: colors.background,
+                backgroundColor: isConnected
+                  ? colors.primary
+                  : status === 'searching'
+                    ? '#F59E0B'
+                    : colors.mutedForeground,
+                borderColor: colors.card,
               },
             ]}
           />
         </View>
+
         <View style={styles.contactCopy}>
           <View style={styles.nameLine}>
-            <Text
-              numberOfLines={1}
-              style={[styles.contactName, { color: colors.foreground }]}
-            >
-              {item.displayName}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text
+                numberOfLines={1}
+                style={[styles.contactName, { color: colors.foreground }]}
+              >
+                {item.displayName}
+              </Text>
+              <View
+                style={[
+                  styles.peerBadge,
+                  {
+                    backgroundColor: isConnected
+                      ? 'rgba(16, 185, 129, 0.14)'
+                      : 'rgba(133, 158, 155, 0.12)',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.peerBadgeText,
+                    {
+                      color: isConnected
+                        ? colors.primary
+                        : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  {isConnected ? 'ONLINE' : 'STANDBY'}
+                </Text>
+              </View>
+            </View>
             {latest ? (
-              <Text style={[styles.time, { color: colors.mutedForeground }]}>
-                {new Date(latest.createdAt).toLocaleTimeString([], {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
+              <Text
+                style={[
+                  styles.time,
+                  {
+                    color:
+                      unreadCount > 0 ? colors.primary : colors.mutedForeground,
+                    fontWeight: unreadCount > 0 ? '800' : '600',
+                  },
+                ]}
+              >
+                {formatChatTime(latest.createdAt)}
               </Text>
             ) : null}
           </View>
+
           <View style={styles.previewLine}>
             {latest?.direction === 'outgoing' ? (
               <Text
@@ -106,24 +202,66 @@ export default function ChatsScreen() {
                   {
                     color:
                       latest.status === 'queued'
-                        ? colors.mutedForeground
+                        ? '#F59E0B'
                         : colors.primary,
                   },
                 ]}
               >
                 {latest.status === 'queued' ? '✓' : '✓✓'}
               </Text>
-            ) : null}
+            ) : (
+              <MaterialCommunityIcons
+                name="lock-outline"
+                size={12}
+                color={colors.primary}
+              />
+            )}
             <Text
               numberOfLines={1}
-              style={[styles.preview, { color: colors.mutedForeground }]}
+              style={[
+                styles.preview,
+                {
+                  color:
+                    unreadCount > 0
+                      ? colors.foreground
+                      : colors.mutedForeground,
+                  fontWeight: unreadCount > 0 ? '700' : '400',
+                },
+              ]}
             >
               {latest
                 ? previewText(latest.content)
-                : status === 'connected'
-                  ? 'Direct connection ready'
-                  : 'Tap to start a private chat'}
+                : isConnected
+                  ? 'Direct P2P tunnel connected · Say hello'
+                  : 'Waiting for peer connection · Tap to message'}
             </Text>
+
+            {unreadCount > 0 ? (
+              <View
+                style={[
+                  styles.unreadBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.unreadBadgeText,
+                    { color: colors.primaryForeground },
+                  ]}
+                >
+                  {unreadCount}
+                </Text>
+              </View>
+            ) : queuedCount > 0 ? (
+              <View
+                style={[
+                  styles.queuedPill,
+                  { borderColor: 'rgba(245, 158, 11, 0.35)' },
+                ]}
+              >
+                <Text style={styles.queuedPillText}>{queuedCount} queued</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </Pressable>
@@ -135,23 +273,45 @@ export default function ChatsScreen() {
       <View
         style={[
           styles.topBar,
-          { paddingTop: safeTop + 10, borderBottomColor: colors.border },
+          { paddingTop: safeTop + 8, borderBottomColor: colors.border },
         ]}
       >
-        <View>
-          <Text style={[styles.eyebrow, { color: colors.primary }]}>
-            PRIVATE BY DEFAULT
-          </Text>
-          <Text style={[styles.title, { color: colors.foreground }]}>Chats</Text>
+        <View style={styles.brandHeader}>
+          <View style={[styles.brandBadge, { backgroundColor: colors.accent }]}>
+            <MaterialCommunityIcons
+              name="shield-check"
+              size={18}
+              color={colors.primary}
+            />
+          </View>
+          <View>
+            <Text style={[styles.eyebrow, { color: colors.primary }]}>
+              END-TO-END ENCRYPTED · P2P
+            </Text>
+            <Text style={[styles.title, { color: colors.foreground }]}>
+              Messages
+            </Text>
+          </View>
         </View>
-        <Pressable
-          accessibilityLabel="Add contact"
-          onPress={() => router.push('/(tabs)/contacts')}
-          style={[styles.headerButton, { backgroundColor: colors.secondary }]}
-        >
-          <Feather name="user-plus" size={19} color={colors.foreground} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Add or scan contact"
+            onPress={() => router.push('/(tabs)/contacts')}
+            style={[
+              styles.headerButton,
+              { backgroundColor: colors.primary },
+            ]}
+          >
+            <Feather
+              name="user-plus"
+              size={18}
+              color={colors.primaryForeground}
+            />
+          </Pressable>
+        </View>
       </View>
+
+      <ConnectionBanner />
 
       <View
         style={[
@@ -159,11 +319,11 @@ export default function ChatsScreen() {
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <Feather name="search" size={17} color={colors.mutedForeground} />
+        <Feather name="search" size={16} color={colors.mutedForeground} />
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search conversations"
+          placeholder="Search encrypted chats…"
           placeholderTextColor={colors.mutedForeground}
           style={[styles.searchInput, { color: colors.foreground }]}
           returnKeyType="search"
@@ -174,18 +334,57 @@ export default function ChatsScreen() {
             onPress={() => setSearch('')}
             accessibilityLabel="Clear search"
           >
-            <Feather name="x" size={17} color={colors.mutedForeground} />
+            <Feather name="x" size={16} color={colors.mutedForeground} />
           </Pressable>
         ) : null}
       </View>
 
-      <View style={styles.sectionRow}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-          YOUR CONVERSATIONS
-        </Text>
-        <Text style={[styles.count, { color: colors.mutedForeground }]}>
-          {filtered.length}
-        </Text>
+      <View style={styles.filterRow}>
+        {(
+          [
+            { key: 'all', label: `All (${contacts.length})` },
+            {
+              key: 'online',
+              label: `Online (${contacts.filter((c) => connectionStatus[c.id] === 'connected').length})`,
+            },
+            {
+              key: 'unread',
+              label: `Unread (${Array.from(statsByContact.unread.values()).reduce((a, b) => a + b, 0)})`,
+            },
+            {
+              key: 'queued',
+              label: `Queued (${Array.from(statsByContact.queued.values()).reduce((a, b) => a + b, 0)})`,
+            },
+          ] as Array<{ key: FilterKind; label: string }>
+        ).map((pill) => {
+          const active = filter === pill.key;
+          return (
+            <Pressable
+              key={pill.key}
+              onPress={() => setFilter(pill.key)}
+              style={[
+                styles.filterPill,
+                {
+                  backgroundColor: active ? colors.primary : colors.card,
+                  borderColor: active ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.filterPillText,
+                  {
+                    color: active
+                      ? colors.primaryForeground
+                      : colors.mutedForeground,
+                  },
+                ]}
+              >
+                {pill.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <FlatList
@@ -194,13 +393,13 @@ export default function ChatsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: Math.max(insets.bottom, 34) + 90 },
+          { paddingBottom: Math.max(insets.bottom, 34) + 96 },
           filtered.length === 0 && styles.emptyList,
         ]}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.card }]}>
+            <View style={[styles.emptyIcon, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <MaterialCommunityIcons
                 name="message-lock-outline"
                 size={30}
@@ -208,25 +407,28 @@ export default function ChatsScreen() {
               />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              {search ? 'No matches' : 'Start with someone you trust'}
+              {search || filter !== 'all'
+                ? 'No matching conversations'
+                : 'Start with someone you trust'}
             </Text>
             <Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>
-              {search
-                ? 'Try another name.'
-                : 'Share your invite or scan a friend’s QR. Messages travel directly between devices.'}
+              {search || filter !== 'all'
+                ? 'Try clearing your search or switching the conversation filter above.'
+                : 'Share your QR invite or scan a friend’s code. Messages travel directly device-to-device with zero servers.'}
             </Text>
-            {!search ? (
+            {!search && filter === 'all' ? (
               <Pressable
                 onPress={() => router.push('/(tabs)/contacts')}
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
               >
+                <Feather name="plus" size={16} color={colors.primaryForeground} />
                 <Text
                   style={[
                     styles.emptyButtonText,
                     { color: colors.primaryForeground },
                   ]}
                 >
-                  Add a contact
+                  Add or Scan Contact
                 </Text>
               </Pressable>
             ) : null}
@@ -241,12 +443,12 @@ export default function ChatsScreen() {
         ]}
       >
         <MaterialCommunityIcons
-          name="shield-check-outline"
-          size={16}
+          name="shield-lock-outline"
+          size={14}
           color={colors.primary}
         />
         <Text style={[styles.footnoteText, { color: colors.mutedForeground }]}>
-          {identity?.displayName ?? 'Your device'} · no central message storage
+          {identity?.displayName ?? 'Local Node'} · Zero central storage · Ed25519 + X25519
         </Text>
       </View>
     </View>
@@ -256,117 +458,214 @@ export default function ChatsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   topBar: {
-    paddingHorizontal: 22,
-    paddingBottom: 15,
+    paddingHorizontal: 18,
+    paddingBottom: 13,
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.7, marginBottom: 3 },
-  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  brandBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eyebrow: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    marginBottom: 1,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchWrap: {
-    height: 46,
-    borderRadius: 15,
+    height: 44,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    marginHorizontal: 20,
-    marginTop: 17,
+    gap: 9,
+    paddingHorizontal: 13,
+    marginHorizontal: 16,
+    marginTop: 10,
   },
-  searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
-  sectionRow: {
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sectionLabel: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800' },
-  count: { fontSize: 11, fontWeight: '700' },
-  list: { paddingHorizontal: 18 },
-  emptyList: { flexGrow: 1 },
-  contactRow: {
-    minHeight: 82,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  searchInput: { flex: 1, fontSize: 13.5, paddingVertical: 0 },
+  filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 13,
-    paddingHorizontal: 4,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 8,
+  },
+  filterPill: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 99,
+    borderWidth: 1,
+  },
+  filterPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    gap: 9,
+  },
+  emptyList: { flexGrow: 1 },
+  contactCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: { fontSize: 15, fontWeight: '800' },
   presenceDot: {
-    width: 12,
-    height: 12,
-    borderWidth: 2,
+    width: 13,
+    height: 13,
+    borderWidth: 2.5,
     borderRadius: 7,
     position: 'absolute',
-    right: -1,
-    bottom: -1,
+    right: -2,
+    bottom: -2,
   },
-  contactCopy: { flex: 1, gap: 7 },
+  contactCopy: { flex: 1, gap: 6 },
   nameLine: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  contactName: { flex: 1, fontSize: 15, fontWeight: '700' },
-  time: { fontSize: 10 },
-  previewLine: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  preview: { flex: 1, fontSize: 12 },
-  tick: { fontSize: 12, fontWeight: '800' },
+  nameRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  contactName: {
+    fontSize: 15,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  peerBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  peerBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  time: { fontSize: 10.5 },
+  previewLine: {
+    flexDirection: 'row',
+    gap: 5,
+    alignItems: 'center',
+  },
+  preview: { flex: 1, fontSize: 12.5 },
+  tick: { fontSize: 12, fontWeight: '900', letterSpacing: -1 },
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  queuedPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 99,
+    borderWidth: 1,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+  },
+  queuedPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
   empty: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 36,
-    paddingVertical: 50,
+    paddingHorizontal: 34,
+    paddingVertical: 44,
   },
   emptyIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 25,
+    width: 68,
+    height: 68,
+    borderRadius: 24,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
   },
-  emptyTitle: { fontSize: 19, fontWeight: '800', textAlign: 'center' },
+  emptyTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
   emptyCopy: {
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12.5,
+    lineHeight: 19,
     textAlign: 'center',
-    marginTop: 9,
+    marginTop: 8,
   },
-  emptyButton: { marginTop: 20, paddingHorizontal: 19, paddingVertical: 13, borderRadius: 14 },
+  emptyButton: {
+    marginTop: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
   emptyButtonText: { fontSize: 13, fontWeight: '800' },
   footnote: {
     position: 'absolute',
-    bottom: 92,
+    bottom: 88,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
     paddingHorizontal: 13,
-    paddingVertical: 9,
+    paddingVertical: 7,
     borderRadius: 99,
     borderWidth: 1,
   },
-  footnoteText: { fontSize: 10, fontWeight: '600' },
+  footnoteText: { fontSize: 10, fontWeight: '700' },
 });

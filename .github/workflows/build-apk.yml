@@ -2,13 +2,17 @@ name: Build Android APK
 
 on:
   workflow_call:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-android:
-    name: Build and publish debug APK
+    name: Build and publish debug APK & Web bundle
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -80,13 +84,16 @@ jobs:
               ts_cfg.unlink()
           PY
 
-      - name: Export the Expo web app
-        run: pnpm --filter @workspace/p2p-messenger run build:web
+      - name: Export the Expo web app and package web zip
+        run: |
+          pnpm --filter @workspace/p2p-messenger run build:web
+          cd artifacts/p2p-messenger/dist
+          zip -r ../../../p2p-messenger-web.zip .
 
       - name: Create the Capacitor Android project
         run: pnpm --filter @workspace/p2p-messenger run cap:add:android
 
-      - name: Sync the web app and add camera/audio permissions
+      - name: Sync the web app and add camera/audio/notification permissions
         working-directory: artifacts/p2p-messenger
         run: |
           pnpm run cap:sync:android
@@ -101,6 +108,8 @@ jobs:
               '    <uses-permission android:name="android.permission.CAMERA" />',
               '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
               '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+              '    <uses-permission android:name="android.permission.VIBRATE" />',
               '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
           ]
           for line in permissions:
@@ -113,20 +122,24 @@ jobs:
         working-directory: artifacts/p2p-messenger/android
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Upload APK artifact
+      - name: Upload APK and Web artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+          name: p2p-messenger-release-bundle
+          path: |
+            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+            p2p-messenger-web.zip
 
-      - name: Publish APK to GitHub Releases
+      - name: Publish APK and Web zip to GitHub Releases
         if: github.event.repository.fork == false
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-${{ github.run_id }}
-          name: Android debug build ${{ github.run_number }}
+          name: Android & Web build ${{ github.run_number }}
           prerelease: true
           generate_release_notes: false
-          files: artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+          files: |
+            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+            p2p-messenger-web.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

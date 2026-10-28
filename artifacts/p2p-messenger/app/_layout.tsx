@@ -5,6 +5,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import CallOverlay from '@/components/CallOverlay';
+import NotificationToast from '@/components/NotificationToast';
 import { MessengerProvider } from '@/context/MessengerContext';
 import {
   Inter_400Regular,
@@ -16,7 +17,6 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
@@ -58,10 +58,11 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView>
             <KeyboardProvider>
-            <MessengerProvider>
-              <RootLayoutNav />
+              <MessengerProvider>
+                <RootLayoutNav />
+                <NotificationToast />
                 <CallOverlay />
-            </MessengerProvider>
+              </MessengerProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

@@ -1,80 +1,68 @@
 /**
- * Semantic design tokens for the mobile app.
- *
- * These tokens mirror the naming conventions used in web artifacts (index.css)
- * so that multi-artifact projects share a cohesive visual identity.
- *
- * Replace the placeholder values below with values that match the project's
- * brand. If a sibling web artifact exists, read its index.css and convert the
- * HSL values to hex so both artifacts use the same palette.
- *
- * To add dark mode, add a `dark` key with the same token names.
- * The useColors() hook will automatically pick it up.
+ * Semantic design tokens for P2P Messenger.
+ * Refined dark obsidian & emerald palette matching the attached UI design.
  */
 
 const colors = {
   light: {
-    // Legacy aliases (kept for backward compatibility)
-    text: '#E9F0EF',
-    tint: '#39D98A',
+    text: '#ECF4F1',
+    tint: '#10B981',
 
     // Core surfaces
-    background: '#081417',
-    foreground: '#E9F0EF',
+    background: '#070E10',
+    foreground: '#ECF4F1',
 
     // Cards / elevated surfaces
-    card: '#102126',
-    cardForeground: '#E9F0EF',
+    card: '#0E1A1D',
+    cardForeground: '#ECF4F1',
 
-    // Primary action color (buttons, links, active states)
-    primary: '#39D98A',
-    primaryForeground: '#092019',
+    // Primary action color (emerald accent)
+    primary: '#10B981',
+    primaryForeground: '#042318',
 
-    // Secondary / less-emphasis interactive surfaces
-    secondary: '#193037',
-    secondaryForeground: '#DCE8E6',
+    // Secondary / subtle interactive surfaces
+    secondary: '#15262B',
+    secondaryForeground: '#DAE8E4',
 
-    // Muted / subdued elements (dividers, timestamps, placeholders)
-    muted: '#14272C',
-    mutedForeground: '#91A7A7',
+    // Muted / subdued elements
+    muted: '#112024',
+    mutedForeground: '#859E9B',
 
-    // Accent highlights (badges, selected items, focus rings)
-    accent: '#1D3B3D',
-    accentForeground: '#C5F7DF',
+    // Accent highlights (outgoing bubbles, badges, active chips)
+    accent: '#14332C',
+    accentForeground: '#D1FAE5',
 
-    // Destructive actions (delete, error states)
-    destructive: '#FF6B6B',
-    destructiveForeground: '#2B1011',
+    // Destructive actions
+    destructive: '#F87171',
+    destructiveForeground: '#2A0E10',
 
     // Borders and input outlines
-    border: '#20363A',
-    input: '#294247',
+    border: '#1C3035',
+    input: '#223A40',
   },
 
   dark: {
-    text: '#E9F0EF',
-    tint: '#39D98A',
-    background: '#081417',
-    foreground: '#E9F0EF',
-    card: '#102126',
-    cardForeground: '#E9F0EF',
-    primary: '#39D98A',
-    primaryForeground: '#092019',
-    secondary: '#193037',
-    secondaryForeground: '#DCE8E6',
-    muted: '#14272C',
-    mutedForeground: '#91A7A7',
-    accent: '#1D3B3D',
-    accentForeground: '#C5F7DF',
-    destructive: '#FF6B6B',
-    destructiveForeground: '#2B1011',
-    border: '#20363A',
-    input: '#294247',
+    text: '#ECF4F1',
+    tint: '#10B981',
+    background: '#070E10',
+    foreground: '#ECF4F1',
+    card: '#0E1A1D',
+    cardForeground: '#ECF4F1',
+    primary: '#10B981',
+    primaryForeground: '#042318',
+    secondary: '#15262B',
+    secondaryForeground: '#DAE8E4',
+    muted: '#112024',
+    mutedForeground: '#859E9B',
+    accent: '#14332C',
+    accentForeground: '#D1FAE5',
+    destructive: '#F87171',
+    destructiveForeground: '#2A0E10',
+    border: '#1C3035',
+    input: '#223A40',
   },
 
-  // Border radius (in px). Sync from the sibling web artifact's --radius
-  // CSS variable. This value applies to cards, buttons, inputs, and modals.
-  radius: 12,
+  radius: 14,
 };
 
 export default colors;

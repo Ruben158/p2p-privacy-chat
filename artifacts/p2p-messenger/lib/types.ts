@@ -41,7 +41,7 @@ export interface IceCandidatePayload {
   candidate: string;
   sdpMid?: string | null;
   sdpMLineIndex?: number | null;
-  usernameFragment?: string | null;
+  usernameFragment?: number | string | null;
 }
 
 export type CallSignal =
@@ -63,6 +63,9 @@ export interface ActiveCall {
 
 export type SecurePayload =
   | { kind: 'hello' }
+  | { kind: 'hello-ack' }
+  | { kind: 'ping'; timestamp: number }
+  | { kind: 'pong'; timestamp: number }
   | { kind: 'message'; message: MessageContent }
   | { kind: 'ack'; messageId: string }
   | { kind: 'read'; messageId: string }
@@ -86,6 +89,21 @@ export interface OutboxItem {
   createdAt: number;
 }
 
+export interface AppPreferences {
+  notificationsEnabled: boolean;
+  soundEnabled: boolean;
+  readReceiptsEnabled: boolean;
+  typingIndicatorsEnabled: boolean;
+}
+
+export interface InAppNotification {
+  id: string;
+  contactId: string;
+  title: string;
+  body: string;
+  createdAt: number;
+}
+
 export interface LocalSnapshot {
   identity: LocalIdentity | null;
   contacts: Contact[];
@@ -93,3 +111,4 @@ export interface LocalSnapshot {
 }
 
 export type ConnectionStatus = 'searching' | 'connected' | 'offline';
+export type NodeStatus = 'online' | 'connecting' | 'offline';
