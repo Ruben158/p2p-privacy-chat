@@ -46,58 +46,65 @@ export default function ConnectionBanner({
     : pendingOutboxCount;
 
   let dotColor = colors.primary;
-  let badgeBg = 'rgba(16, 185, 129, 0.12)';
-  let badgeBorder = 'rgba(16, 185, 129, 0.28)';
+  let badgeBg = 'rgba(16, 185, 129, 0.14)';
+  let badgeBorder = 'rgba(16, 185, 129, 0.35)';
+  let statusPillText = 'CONNECTED';
   let title = '';
   let subtitle = '';
 
   if (nodeStatus === 'offline') {
     dotColor = colors.destructive;
-    badgeBg = 'rgba(239, 68, 68, 0.12)';
-    badgeBorder = 'rgba(239, 68, 68, 0.3)';
+    badgeBg = 'rgba(239, 68, 68, 0.14)';
+    badgeBorder = 'rgba(239, 68, 68, 0.35)';
+    statusPillText = 'OFFLINE';
     title = 'Device Offline · Not Connected';
     subtitle = 'No network link — tap Sync to reconnect when back online';
   } else if (contactId && contact) {
     if (peerStatus === 'connected') {
       dotColor = colors.primary;
-      badgeBg = 'rgba(16, 185, 129, 0.12)';
-      badgeBorder = 'rgba(16, 185, 129, 0.28)';
+      badgeBg = 'rgba(16, 185, 129, 0.14)';
+      badgeBorder = 'rgba(16, 185, 129, 0.35)';
+      statusPillText = 'CONNECTED';
       title = `Connected directly to ${contact.displayName}`;
       subtitle =
         contactQueuedCount > 0
           ? `Flushing ${contactQueuedCount} queued message${contactQueuedCount === 1 ? '' : 's'}…`
-          : 'Live end-to-end encrypted WebRTC tunnel active';
+          : 'Live end-to-end encrypted P2P tunnel active';
     } else {
       dotColor = '#F59E0B';
-      badgeBg = 'rgba(245, 158, 11, 0.11)';
-      badgeBorder = 'rgba(245, 158, 11, 0.28)';
-      title = `Device Online · Waiting for ${contact.displayName}`;
+      badgeBg = 'rgba(245, 158, 11, 0.13)';
+      badgeBorder = 'rgba(245, 158, 11, 0.35)';
+      statusPillText = 'WAITING';
+      title = `Not Connected to ${contact.displayName} Yet`;
       subtitle =
         contactQueuedCount > 0
-          ? `${contactQueuedCount} message${contactQueuedCount === 1 ? '' : 's'} queued · Will deliver automatically when peer opens app`
-          : 'Your device is listening — tap Sync if both apps are open';
+          ? `${contactQueuedCount} message${contactQueuedCount === 1 ? '' : 's'} queued · Tap Sync if both apps are open`
+          : 'Your app is online & listening — tap Sync to force handshake';
     }
   } else {
     if (contacts.length === 0) {
       dotColor = colors.primary;
-      title = 'Device Connected · P2P Node Ready';
-      subtitle = 'Add a trusted contact via QR or invite link to start chatting';
+      statusPillText = 'ONLINE';
+      title = 'Device Online · P2P Node Ready';
+      subtitle = 'Add a contact via QR code or invite link to start chatting';
     } else if (connectedPeersCount > 0) {
       dotColor = colors.primary;
-      title = `Device Connected · ${connectedPeersCount} of ${contacts.length} peer${contacts.length === 1 ? '' : 's'} online`;
+      statusPillText = 'CONNECTED';
+      title = `Connected · ${connectedPeersCount} of ${contacts.length} peer${contacts.length === 1 ? '' : 's'} live`;
       subtitle =
         pendingOutboxCount > 0
-          ? `Syncing ${pendingOutboxCount} queued message${pendingOutboxCount === 1 ? '' : 's'}…`
-          : 'Direct WebRTC channels active & listening for messages';
+          ? `Delivering ${pendingOutboxCount} queued message${pendingOutboxCount === 1 ? '' : 's'}…`
+          : 'Direct P2P WebRTC tunnel active & receiving messages';
     } else {
       dotColor = '#F59E0B';
-      badgeBg = 'rgba(245, 158, 11, 0.10)';
-      badgeBorder = 'rgba(245, 158, 11, 0.26)';
-      title = `Device Online · 0 of ${contacts.length} peers currently connected`;
+      badgeBg = 'rgba(245, 158, 11, 0.13)';
+      badgeBorder = 'rgba(245, 158, 11, 0.35)';
+      statusPillText = 'SEARCHING';
+      title = `Device Online · 0 of ${contacts.length} peers connected`;
       subtitle =
         pendingOutboxCount > 0
-          ? `${pendingOutboxCount} queued message${pendingOutboxCount === 1 ? '' : 's'} waiting · Tap Sync when your friend is online`
-          : 'Signaling active — waiting for a contact to open their app';
+          ? `${pendingOutboxCount} message${pendingOutboxCount === 1 ? '' : 's'} queued · Tap Sync when your friend opens the app`
+          : 'Listening for peers — tap Sync if your friend has the app open';
     }
   }
 
@@ -126,6 +133,14 @@ export default function ConnectionBanner({
         </View>
         <View style={styles.textWrap}>
           <View style={styles.titleRow}>
+            <View
+              style={[
+                styles.stateBadge,
+                { backgroundColor: dotColor },
+              ]}
+            >
+              <Text style={styles.stateBadgeText}>{statusPillText}</Text>
+            </View>
             <Text
               numberOfLines={1}
               style={[styles.title, { color: colors.foreground }]}
@@ -148,14 +163,12 @@ export default function ConnectionBanner({
               </View>
             ) : null}
           </View>
-          {!compact ? (
-            <Text
-              numberOfLines={1}
-              style={[styles.subtitle, { color: colors.mutedForeground }]}
-            >
-              {subtitle}
-            </Text>
-          ) : null}
+          <Text
+            numberOfLines={1}
+            style={[styles.subtitle, { color: colors.mutedForeground }]}
+          >
+            {subtitle}
+          </Text>
         </View>
       </View>
 
@@ -232,6 +245,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  stateBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
+  stateBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#061012',
+    letterSpacing: 0.4,
   },
   title: {
     fontSize: 12,

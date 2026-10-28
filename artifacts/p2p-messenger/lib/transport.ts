@@ -8,51 +8,61 @@ import type {
 } from './types';
 
 const appId = 'org.p2pmessenger.direct.v1';
-const actionName = 'p2p-messenger-encrypted-v1';
+// CRITICAL: Trystero enforces a strict 12-byte max length on action names!
+const actionName = 'p2p-msg-v1';
+
+const NOSTR_RELAYS = [
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+  'wss://relay.primal.net',
+  'wss://nostr.wine',
+  'wss://relay.nostr.band',
+];
+
+const TORRENT_TRACKERS = [
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.webtorrent.dev',
+  'wss://tracker.files.fm:7073/announce',
+  'wss://tracker.btorrent.xyz',
+];
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
 };
 
-type MessageAction = {
-  send(
-    message: EncryptedEnvelope,
-    options?: { target?: string | string[] },
-  ): Promise<unknown> | unknown;
-  onMessage:
-    | ((message: EncryptedEnvelope, context: { peerId: string }) => void)
-    | null;
+type NormalizedAction = {
+  send: (packet: EncryptedEnvelope, peers?: string[]) => Promise<void>;
+  setOnMessage: (
+    handler: (packet: EncryptedEnvelope, peerId?: string) => void,
+  ) => void;
 };
 
-type RoomLike = {
-  makeAction(name: string): MessageAction;
-  onPeerJoin: ((peerId: string) => void) | null;
-  onPeerLeave: ((peerId: string) => void) | null;
-  leave(): Promise<unknown> | unknown;
-};
-
-type JoinRoomModule = {
-  joinRoom(
-    config: {
-      appId: string;
-      maxReceiveBytes: number;
-      rtcConfig?: RTCConfiguration;
-    },
-    roomId: string,
-    callbacks?: { onJoinError?: (event: { error?: unknown }) => void },
-  ): RoomLike;
+type RawRoom = {
+  makeAction: (name: string) => unknown;
+  onPeerJoin?: ((peerId: string) => void) | null;
+  onPeerLeave?: ((peerId: string) => void) | null;
+  getPeers?: () => Record<string, RTCPeerConnection> | string[];
+  leave: () => Promise<unknown> | unknown;
 };
 
 type Link = {
-  room: RoomLike;
-  action: MessageAction;
+  room: RawRoom;
+  action: NormalizedAction;
   peers: Set<string>;
-  strategy: 'nostr' | 'torrent';
+  strategy: string;
 };
 
 type Session = {
@@ -61,7 +71,66 @@ type Session = {
   links: Link[];
   handshakeTimers: Array<ReturnType<typeof setTimeout>>;
   lastPacketAt: number;
+  openedAt: number;
 };
+
+function normalizeRoomAction(rawAction: unknown): NormalizedAction {
+  // Case 1: Standard Trystero tuple [sendFn, receiveFn, onProgressFn]
+  if (Array.isArray(rawAction) && typeof rawAction[0] === 'function') {
+    const sendFn = rawAction[0] as (
+      data: EncryptedEnvelope,
+      targetPeers?: string[] | string | null,
+    ) => Promise<unknown> | unknown;
+    const receiveFn = rawAction[1] as (
+      cb: (data: EncryptedEnvelope, peerId: string) => void,
+    ) => void;
+
+    return {
+      send: async (packet, peers) => {
+        if (peers && peers.length > 0) {
+          await Promise.resolve(sendFn(packet, peers));
+        } else {
+          await Promise.resolve(sendFn(packet));
+        }
+      },
+      setOnMessage: (handler) => {
+        if (typeof receiveFn === 'function') {
+          receiveFn((data, peerId) => handler(data, peerId));
+        }
+      },
+    };
+  }
+
+  // Case 2: Object-style action { send, onMessage }
+  const objAction = rawAction as {
+    send?: (
+      data: EncryptedEnvelope,
+      options?: unknown,
+    ) => Promise<unknown> | unknown;
+    onMessage?:
+      | ((data: EncryptedEnvelope, context?: { peerId?: string }) => void)
+      | null;
+  };
+
+  return {
+    send: async (packet, peers) => {
+      if (typeof objAction?.send !== 'function') return;
+      try {
+        // Send to all peers in the private 1-to-1 room
+        await Promise.resolve(objAction.send(packet));
+      } catch {
+        if (peers && peers.length > 0) {
+          await Promise.resolve(objAction.send(packet, { target: peers }));
+        }
+      }
+    },
+    setOnMessage: (handler) => {
+      if (objAction && typeof objAction === 'object') {
+        objAction.onMessage = (data, ctx) => handler(data, ctx?.peerId);
+      }
+    },
+  };
+}
 
 export interface TransportCallbacks {
   onPeerAvailable(contactId: string): void;
@@ -96,10 +165,6 @@ export class P2PManager {
       this.callbacks.onNodeStatus?.('offline');
       for (const contact of contacts) {
         this.callbacks.onStatus(contact.id, 'offline');
-        this.callbacks.onError?.(
-          contact.id,
-          'Direct P2P runs in the Capacitor Android app or a browser. This Expo native preview is not a WebRTC host.',
-        );
       }
       return;
     }
@@ -119,15 +184,18 @@ export class P2PManager {
       this.callbacks.onNodeStatus?.('online');
       const now = Date.now();
       for (const [contactId, session] of this.sessions.entries()) {
+        this.syncRoomPeers(session);
         const hasPeers = session.links.some((link) => link.peers.size > 0);
-        if (hasPeers) {
+        if (hasPeers || this.authenticated.has(contactId)) {
           this.callbacks.onHeartbeat(
             contactId,
             this.authenticated.has(contactId),
           );
-        } else if (
+        }
+        if (
+          !hasPeers &&
           this.authenticated.has(contactId) &&
-          now - session.lastPacketAt > 25_000
+          now - session.lastPacketAt > 35_000
         ) {
           this.authenticated.delete(contactId);
           this.callbacks.onStatus(
@@ -136,18 +204,42 @@ export class P2PManager {
           );
         }
       }
-    }, 5_000);
+    }, 4_000);
 
     if (this.reannounceInterval) clearInterval(this.reannounceInterval);
     this.reannounceInterval = setInterval(() => {
       if (this.stopped || !this.isDeviceOnline()) return;
+      const now = Date.now();
       for (const [contactId, session] of this.sessions.entries()) {
+        this.syncRoomPeers(session);
         const hasPeers = session.links.some((link) => link.peers.size > 0);
-        if (!hasPeers && !this.authenticated.has(contactId)) {
+        if (hasPeers) {
+          this.callbacks.onPeerAvailable(contactId);
+        } else if (
+          !this.authenticated.has(contactId) &&
+          now - session.openedAt > 90_000
+        ) {
           void this.rejoinSession(contactId, session.contact);
         }
       }
-    }, 40_000);
+    }, 30_000);
+  }
+
+  private syncRoomPeers(session: Session): void {
+    for (const link of session.links) {
+      if (typeof link.room.getPeers === 'function') {
+        try {
+          const rawPeers = link.room.getPeers();
+          if (Array.isArray(rawPeers)) {
+            rawPeers.forEach((p) => link.peers.add(p));
+          } else if (rawPeers && typeof rawPeers === 'object') {
+            Object.keys(rawPeers).forEach((p) => link.peers.add(p));
+          }
+        } catch {
+          // Ignore getPeers errors
+        }
+      }
+    }
   }
 
   private attachLifecycleListeners(): void {
@@ -175,12 +267,8 @@ export class P2PManager {
         if (this.isDeviceOnline()) {
           this.callbacks.onNodeStatus?.('online');
           for (const [contactId, session] of this.sessions.entries()) {
-            const hasPeers = session.links.some((link) => link.peers.size > 0);
-            if (hasPeers) {
-              this.callbacks.onPeerAvailable(contactId);
-            } else {
-              void this.rejoinSession(contactId, session.contact);
-            }
+            this.syncRoomPeers(session);
+            this.scheduleHandshakeBurst(contactId, session);
           }
         }
       }
@@ -237,21 +325,30 @@ export class P2PManager {
       links: [],
       handshakeTimers: [],
       lastPacketAt: 0,
+      openedAt: Date.now(),
     };
     this.sessions.set(contact.id, session);
 
     const strategies: Array<{
-      name: 'nostr' | 'torrent';
-      load: () => Promise<JoinRoomModule>;
+      name: string;
+      relayUrls: string[];
+      load: () => Promise<{ joinRoom: (...args: unknown[]) => RawRoom }>;
     }> = [
       {
         name: 'nostr',
-        load: async () => (await import('trystero')) as JoinRoomModule,
+        relayUrls: NOSTR_RELAYS,
+        load: async () =>
+          (await import('trystero')) as unknown as {
+            joinRoom: (...args: unknown[]) => RawRoom;
+          },
       },
       {
         name: 'torrent',
+        relayUrls: TORRENT_TRACKERS,
         load: async () =>
-          (await import('@trystero-p2p/torrent')) as JoinRoomModule,
+          (await import('@trystero-p2p/torrent')) as unknown as {
+            joinRoom: (...args: unknown[]) => RawRoom;
+          },
       },
     ];
 
@@ -260,25 +357,19 @@ export class P2PManager {
         try {
           const module = await strategy.load();
           if (this.stopped || this.sessions.get(contact.id) !== session) return;
+
           const room = module.joinRoom(
             {
               appId,
+              relayUrls: strategy.relayUrls,
               maxReceiveBytes: 12 * 1024 * 1024,
               rtcConfig: RTC_CONFIG,
             },
             roomId,
-            {
-              onJoinError: ({ error }) => {
-                this.callbacks.onError?.(
-                  contact.id,
-                  error instanceof Error
-                    ? error.message
-                    : 'The signaling connection could not be opened.',
-                );
-              },
-            },
           );
-          const action = room.makeAction(actionName);
+
+          const rawAction = room.makeAction(actionName);
+          const action = normalizeRoomAction(rawAction);
           const link: Link = {
             room,
             action,
@@ -287,8 +378,9 @@ export class P2PManager {
           };
           session.links.push(link);
 
-          action.onMessage = (packet) => {
+          action.setOnMessage((packet, peerId) => {
             if (this.stopped || !packet || typeof packet !== 'object') return;
+            if (peerId) link.peers.add(peerId);
             session.lastPacketAt = Date.now();
             void Promise.resolve(this.callbacks.onPacket(contact.id, packet)).catch(
               (error: unknown) => {
@@ -300,23 +392,24 @@ export class P2PManager {
                 );
               },
             );
-          };
+          });
 
-          room.onPeerJoin = (peerId) => {
+          const handlePeerJoin = (peerId: string) => {
             if (this.stopped || this.sessions.get(contact.id) !== session) return;
-            link.peers.add(peerId);
-            if (!this.authenticated.has(contact.id)) {
-              this.callbacks.onStatus(contact.id, 'searching');
-            }
+            if (peerId) link.peers.add(peerId);
             this.scheduleHandshakeBurst(contact.id, session);
           };
 
-          room.onPeerLeave = (peerId) => {
-            link.peers.delete(peerId);
+          const handlePeerLeave = (peerId: string) => {
+            if (peerId) link.peers.delete(peerId);
+            this.syncRoomPeers(session);
             const isAnyPeerConnected = session.links.some(
               (sessionLink) => sessionLink.peers.size > 0,
             );
-            if (!isAnyPeerConnected) {
+            if (
+              !isAnyPeerConnected &&
+              Date.now() - session.lastPacketAt > 15_000
+            ) {
               this.authenticated.delete(contact.id);
               this.callbacks.onStatus(
                 contact.id,
@@ -324,6 +417,33 @@ export class P2PManager {
               );
             }
           };
+
+          if (typeof room.onPeerJoin === 'function') {
+            try {
+              (room.onPeerJoin as unknown as (cb: (id: string) => void) => void)(
+                handlePeerJoin,
+              );
+            } catch {
+              room.onPeerJoin = handlePeerJoin;
+            }
+          } else {
+            room.onPeerJoin = handlePeerJoin;
+          }
+
+          if (typeof room.onPeerLeave === 'function') {
+            try {
+              (room.onPeerLeave as unknown as (cb: (id: string) => void) => void)(
+                handlePeerLeave,
+              );
+            } catch {
+              room.onPeerLeave = handlePeerLeave;
+            }
+          } else {
+            room.onPeerLeave = handlePeerLeave;
+          }
+
+          // Immediately trigger a handshake attempt in case peers are already present
+          this.scheduleHandshakeBurst(contact.id, session);
         } catch (error) {
           if (!this.stopped) {
             this.callbacks.onError?.(
@@ -343,14 +463,12 @@ export class P2PManager {
     session.handshakeTimers = [];
 
     this.callbacks.onPeerAvailable(contactId);
-    const delays = [300, 1000, 2400, 4800];
+    const delays = [250, 800, 1800, 3500, 6500];
     for (const delay of delays) {
       const timer = setTimeout(() => {
         if (this.stopped || this.sessions.get(contactId) !== session) return;
-        const hasPeers = session.links.some((l) => l.peers.size > 0);
-        if (hasPeers) {
-          this.callbacks.onPeerAvailable(contactId);
-        }
+        this.syncRoomPeers(session);
+        this.callbacks.onPeerAvailable(contactId);
       }, delay);
       session.handshakeTimers.push(timer);
     }
@@ -401,8 +519,9 @@ export class P2PManager {
     if (this.stopped || Platform.OS !== 'web') return;
     const session = this.sessions.get(contactId);
     if (!session) return;
+    this.syncRoomPeers(session);
     const hasPeers = session.links.some((link) => link.peers.size > 0);
-    if (hasPeers) {
+    if (hasPeers || this.authenticated.has(contactId)) {
       this.scheduleHandshakeBurst(contactId, session);
     } else {
       await this.rejoinSession(contactId, session.contact);
@@ -420,18 +539,18 @@ export class P2PManager {
 
   async send(contactId: string, packet: EncryptedEnvelope): Promise<boolean> {
     const session = this.sessions.get(contactId);
-    if (!session) return false;
+    if (!session || session.links.length === 0) return false;
+    this.syncRoomPeers(session);
     let sent = false;
     await Promise.all(
       session.links.map(async (link) => {
-        if (link.peers.size === 0) return;
         try {
-          await link.action.send(packet, {
-            target: Array.from(link.peers),
-          });
+          const targets =
+            link.peers.size > 0 ? Array.from(link.peers) : undefined;
+          await link.action.send(packet, targets);
           sent = true;
         } catch {
-          // An unresponsive strategy remains available for the other path.
+          // Try remaining links
         }
       }),
     );

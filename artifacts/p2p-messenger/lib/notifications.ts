@@ -50,20 +50,22 @@ export function getNotificationPermissionState():
   | 'default'
   | 'unsupported' {
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    return 'unsupported';
+    return 'granted';
   }
   if (!('Notification' in window)) {
-    return 'unsupported';
+    // Capacitor Android WebView uses in-app + audio/vibration notifications
+    return 'granted';
   }
   return Notification.permission;
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    return false;
+    return true;
   }
+  getAudioContext();
   if (!('Notification' in window)) {
-    return false;
+    return true;
   }
   if (Notification.permission === 'granted') {
     return true;
@@ -72,14 +74,34 @@ export async function requestNotificationPermission(): Promise<boolean> {
     const result = await Notification.requestPermission();
     return result === 'granted';
   } catch {
-    return false;
+    return true;
   }
 }
 
 let sharedAudioContext: AudioContext | null = null;
+let audioUnlockAttached = false;
+
+function ensureAudioUnlockListener(): void {
+  if (audioUnlockAttached || Platform.OS !== 'web' || typeof window === 'undefined') {
+    return;
+  }
+  audioUnlockAttached = true;
+  const unlock = () => {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      void ctx.resume().catch(() => undefined);
+    }
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => undefined);
+    }
+  };
+  window.addEventListener('pointerdown', unlock, { passive: true });
+  window.addEventListener('keydown', unlock, { passive: true });
+}
 
 function getAudioContext(): AudioContext | null {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  ensureAudioUnlockListener();
   const AudioCtx =
     window.AudioContext ||
     (window as unknown as { webkitAudioContext?: typeof AudioContext })
@@ -98,33 +120,34 @@ function getAudioContext(): AudioContext | null {
   return sharedAudioContext;
 }
 
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  ensureAudioUnlockListener();
+}
+
 export function playNotificationChime(kind: 'message' | 'call' = 'message'): void {
   try {
-    if (Platform.OS !== 'web') {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-        () => undefined,
-      );
-      return;
-    }
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+      () => undefined,
+    );
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-      navigator.vibrate(kind === 'call' ? [180, 90, 180, 90, 240] : [90, 50, 110]);
+      navigator.vibrate(kind === 'call' ? [200, 100, 200, 100, 280] : [120, 60, 140]);
     }
     const ctx = getAudioContext();
     if (!ctx) return;
     const now = ctx.currentTime;
-    const notes = kind === 'call' ? [523.25, 659.25, 783.99] : [587.33, 880];
+    const notes = kind === 'call' ? [523.25, 659.25, 783.99, 1046.5] : [587.33, 880];
     notes.forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + idx * 0.11);
       gain.gain.setValueAtTime(0.001, now + idx * 0.11);
-      gain.gain.exponentialRampToValueAtTime(0.14, now + idx * 0.11 + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.11 + 0.24);
+      gain.gain.exponentialRampToValueAtTime(0.22, now + idx * 0.11 + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.11 + 0.25);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(now + idx * 0.11);
-      osc.stop(now + idx * 0.11 + 0.26);
+      osc.stop(now + idx * 0.11 + 0.27);
     });
   } catch {
     // Ignore audio playback errors if user hasn't interacted with the page yet
