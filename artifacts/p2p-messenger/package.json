@@ -64,6 +64,7 @@
     "@trystero-p2p/torrent": "^0.26.0",
     "expo-camera": "~57.0.6",
     "expo-clipboard": "~57.0.2",
+    "expo-dev-client": "~57.0.20",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.4",
     "qrcode.react": "^4.2.0",
