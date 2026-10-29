@@ -1,72 +1,35 @@
 import React, { useEffect } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { StyleSheet, View } from 'react-native';
+import { Slot } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import CallOverlay from '@/components/CallOverlay';
-import NotificationToast from '@/components/NotificationToast';
+import { useFonts } from 'expo-font';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessengerProvider } from '@/context/MessengerContext';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  useFonts,
-} from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-
-SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient();
-
-function RootLayoutNav() {
-  return (
-    <Stack screenOptions={{ headerBackTitle: 'Back' }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="chat/verify/[id]"
-        options={{ headerShown: false, presentation: 'modal' }}
-      />
-      <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-    </Stack>
-  );
-}
+import InAppBanner from '@/components/InAppBanner';
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+  const [fontsLoaded] = useFonts({
+    ...Feather.font,
+    ...MaterialCommunityIcons.font,
   });
 
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) return null;
-
   return (
-    <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView>
-            <KeyboardProvider>
-              <MessengerProvider>
-                <RootLayoutNav />
-                <NotificationToast />
-                <CallOverlay />
-              </MessengerProvider>
-            </KeyboardProvider>
-          </GestureHandlerRootView>
-        </QueryClientProvider>
-      </ErrorBoundary>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.container}>
+      <MessengerProvider>
+        <StatusBar style="light" />
+        <View style={styles.container}>
+          <Slot />
+          <InAppBanner />
+        </View>
+      </MessengerProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#061012',
+  },
+});
