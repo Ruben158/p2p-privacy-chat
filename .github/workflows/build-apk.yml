@@ -38,6 +38,9 @@ jobs:
         run: |
           cd artifacts/p2p-messenger
           npx expo export --platform web --output-dir dist
+          if [ ! -d "android" ]; then
+            npx @capacitor/cli add android
+          fi
           npx @capacitor/cli sync android
 
       - name: Build APK with Gradle
