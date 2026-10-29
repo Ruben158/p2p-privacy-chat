@@ -17,19 +17,19 @@ jobs:
           node-version: 18
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v3
         with:
           version: 8.15.0
           run_install: false
 
-      - name: Install All Dependencies (Root & Workspaces)
-        run: pnpm install --no-frozen-lockfile
+      - name: Install Dependencies
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Build Web Bundle & Sync Android
         run: |
