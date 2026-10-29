@@ -68,7 +68,9 @@ export default function ContactsScreen() {
         setInvite('');
         setScannerOpen(false);
         setModalOpen(false);
-        router.push({ pathname: '/chat/[id]', params: { id: contact.id } });
+        setTimeout(() => {
+          router.push({ pathname: '/chat/[id]', params: { id: contact.id } });
+        }, 80);
       } catch (reason) {
         setError(
           reason instanceof Error

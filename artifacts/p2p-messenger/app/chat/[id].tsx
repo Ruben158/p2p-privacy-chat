@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@/components/AppIcons';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -324,11 +324,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.screen, { backgroundColor: colors.background }]}
-      behavior="padding"
-      keyboardVerticalOffset={0}
-    >
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View
         style={[
           styles.chatHeader,
@@ -537,6 +533,7 @@ export default function ChatScreen() {
             maxLength={4000}
             style={[
               styles.input,
+              Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null,
               {
                 backgroundColor: colors.card,
                 borderColor: colors.border,
@@ -599,7 +596,7 @@ export default function ChatScreen() {
           )}
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
