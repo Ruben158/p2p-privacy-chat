@@ -28,8 +28,10 @@ jobs:
           version: 8.15.0
           run_install: false
 
-      - name: Install Monorepo Dependencies
-        run: pnpm install --no-frozen-lockfile --recursive
+      - name: Install Package Dependencies
+        run: |
+          cd artifacts/p2p-messenger
+          pnpm install --no-frozen-lockfile
 
       - name: Build Web Bundle & Sync Android
         run: |
