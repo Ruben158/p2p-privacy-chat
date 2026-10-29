@@ -11,12 +11,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@/components/AppIcons';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ConnectionBanner from '@/components/ConnectionBanner';
 import InviteQr from '@/components/InviteQr';
-import { useColors } from '@/hooks/useColors';
+import { useColors, useThemeSettings } from '@/hooks/useColors';
+import { THEME_OPTIONS } from '@/constants/colors';
 import { useMessenger } from '@/context/MessengerContext';
 import { decryptIdentityBackup, encryptIdentityBackup } from '@/lib/crypto';
 import { makeInvite } from '@/lib/encoding';
@@ -26,6 +27,7 @@ type BackupMode = 'export' | 'import' | null;
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const { themeId, themeMode, setThemeId, setThemeMode } = useThemeSettings();
   const insets = useSafeAreaInsets();
   const {
     identity,
@@ -319,6 +321,94 @@ export default function SettingsScreen() {
             ) : null}
           </View>
         ) : null}
+
+
+        <Text style={[styles.section, { color: colors.mutedForeground }]}>
+          APPEARANCE & THEME
+        </Text>
+        <View
+          style={[
+            styles.groupCard,
+            { backgroundColor: colors.card, borderColor: colors.border, padding: 14, gap: 14 },
+          ]}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.accent }]}>
+                <Feather name={themeMode === "dark" ? "moon" : "sun"} size={17} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={[styles.rowTitle, { color: colors.foreground }]}>Appearance</Text>
+                <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>
+                  {themeMode === "dark" ? "Dark mode active" : "Light mode active"}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", backgroundColor: colors.secondary, borderRadius: 10, padding: 3, gap: 4 }}>
+              {(["light", "dark"] as const).map((m) => {
+                const active = themeMode === m;
+                return (
+                  <Pressable
+                    key={m}
+                    onPress={() => setThemeMode(m)}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      backgroundColor: active ? colors.primary : "transparent",
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: active ? colors.primaryForeground : colors.mutedForeground }}>
+                      {m === "light" ? "☀ Light" : "🌙 Dark"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <View style={{ gap: 10 }}>
+            <Text style={[styles.rowTitle, { color: colors.foreground }]}>Color Theme</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              {THEME_OPTIONS.map((t) => {
+                const selected = themeId === t.id;
+                return (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => setThemeId(t.id)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      borderRadius: 12,
+                      backgroundColor: selected ? colors.accent : colors.secondary,
+                      borderWidth: 1.5,
+                      borderColor: selected ? t.swatch : colors.border,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: t.swatch,
+                        borderWidth: selected ? 2 : 0,
+                        borderColor: colors.foreground,
+                      }}
+                    />
+                    <Text style={{ fontSize: 13, fontWeight: selected ? "700" : "500", color: colors.foreground }}>
+                      {t.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
 
         <Text style={[styles.section, { color: colors.mutedForeground }]}>
           NOTIFICATIONS & CHAT PREFERENCES

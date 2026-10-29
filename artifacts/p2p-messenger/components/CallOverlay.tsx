@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from '@/components/AppIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CallMedia from '@/components/CallMedia';
 import { useColors } from '@/hooks/useColors';
@@ -143,7 +143,7 @@ function Control({
   onPress,
 }: {
   label: string;
-  icon: React.ComponentProps<typeof Feather>['name'];
+  icon: string;
   color: string;
   onPress(): void;
 }) {

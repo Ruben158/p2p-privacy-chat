@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@/components/AppIcons';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -229,7 +229,7 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const mine = item.direction === 'outgoing';
     const bubbleColor = mine ? colors.accent : colors.card;
-    const bubbleBorder = mine ? 'rgba(16, 185, 129, 0.28)' : colors.border;
+    const bubbleBorder = mine ? colors.primary : colors.border;
 
     return (
       <View
@@ -482,29 +482,29 @@ export default function ChatScreen() {
             </Text>
           </View>
         }
-        ListHeaderComponent={
-          typing[contact.id] ? (
-            <View
-              style={[
-                styles.typingPill,
-                { backgroundColor: colors.card, borderColor: colors.border, transform: [{ scaleY: -1 }] },
-              ]}
-            >
-              <Text
-                style={[styles.typingText, { color: colors.primary }]}
-              >
-                {contact.displayName} is typing…
-              </Text>
-            </View>
-          ) : null
-        }
+        
       />
+
+      {typing[contact.id] ? (
+        <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.background }}>
+          <View style={[styles.typingPill, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" }]}>
+            <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }} />
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, opacity: 0.65 }} />
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, opacity: 0.35 }} />
+            </View>
+            <Text style={[styles.typingText, { color: colors.foreground }]}>
+              {contact.displayName} is typing…
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View
         style={[
           styles.composerWrap,
           {
-            backgroundColor: '#0A1417',
+            backgroundColor: colors.card,
             borderTopColor: colors.border,
             paddingBottom: Math.max(
               insets.bottom,
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
     height: 190,
     borderRadius: 12,
     marginBottom: 5,
-    backgroundColor: '#0A171A',
+    backgroundColor: colors.card,
   },
   messageText: { fontSize: 14, lineHeight: 20 },
   messageMeta: {

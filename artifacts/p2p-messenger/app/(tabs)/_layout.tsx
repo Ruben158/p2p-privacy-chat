@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Platform, StyleSheet, useColorScheme } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from '@/components/AppIcons';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -37,7 +37,7 @@ export default function TabLayout() {
           height: isWeb ? 80 : 62 + insets.bottom,
           paddingTop: 8,
           paddingBottom: isWeb ? 26 : Math.max(insets.bottom, 10),
-          backgroundColor: '#0A1417',
+          backgroundColor: colors.card,
           borderTopColor: colors.border,
           borderTopWidth: 1,
           elevation: 0,

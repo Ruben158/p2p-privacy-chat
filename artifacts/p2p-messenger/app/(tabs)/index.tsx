@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@/components/AppIcons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -117,7 +117,7 @@ export default function ChatsScreen() {
         style={({ pressed }) => [
           styles.contactCard,
           {
-            backgroundColor: unreadCount > 0 ? '#112327' : colors.card,
+            backgroundColor: unreadCount > 0 ? colors.secondary : colors.card,
             borderColor: isConnected
               ? 'rgba(16, 185, 129, 0.25)'
               : colors.border,
