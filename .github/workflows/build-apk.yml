@@ -34,10 +34,58 @@ jobs:
       - name: Install Monorepo Dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Build Web Bundle & Sync Android
+      - name: Build Web Bundle, Fix Icon Fonts & Sync Android
         run: |
           cd artifacts/p2p-messenger
           npx expo export --platform web --output-dir dist
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const fontsDir = path.join("dist", "fonts");
+            fs.mkdirSync(fontsDir, { recursive: true });
+
+            function findTtf(dir, list = []) {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) findTtf(full, list);
+                else if (entry.name.endsWith(".ttf")) list.push(full);
+              }
+              return list;
+            }
+
+            const ttfFiles = findTtf("dist");
+            let css = "<style>\n";
+            for (const file of ttfFiles) {
+              const base = path.basename(file);
+              // Extract clean font family name before hash (e.g. Ionicons.b4eb09...ttf -> Ionicons)
+              const family = base.split(".")[0];
+              const cleanName = family + ".ttf";
+              fs.copyFileSync(file, path.join(fontsDir, cleanName));
+              css += `@font-face { font-family: "${family}"; src: url("/fonts/${cleanName}") format("truetype"); font-weight: normal; font-style: normal; }\n`;
+              const lower = family.toLowerCase();
+              if (lower !== family) {
+                css += `@font-face { font-family: "${lower}"; src: url("/fonts/${cleanName}") format("truetype"); font-weight: normal; font-style: normal; }\n`;
+              }
+            }
+            css += "</style></head>";
+
+            // Also rewrite deep pnpm font URLs inside JS bundles to /fonts/<Family>.ttf
+            const jsDir = path.join("dist", "_expo", "static", "js", "web");
+            for (const f of fs.readdirSync(jsDir)) {
+              if (f.endsWith(".js")) {
+                const p = path.join(jsDir, f);
+                let js = fs.readFileSync(p, "utf8");
+                js = js.replace(/\/assets\/[^"]*?\/Fonts\/([A-Za-z0-9_]+)\.[a-f0-9]+\.ttf/g, "/fonts/$1.ttf");
+                fs.writeFileSync(p, js, "utf8");
+              }
+            }
+
+            const indexHtmlPath = path.join("dist", "index.html");
+            let html = fs.readFileSync(indexHtmlPath, "utf8");
+            html = html.replace("</head>", css);
+            fs.writeFileSync(indexHtmlPath, html, "utf8");
+            console.log("Injected clean @font-face rules for", ttfFiles.length, "icon fonts.");
+          '
           if [ ! -d "android" ]; then
             npx @capacitor/cli add android
           fi

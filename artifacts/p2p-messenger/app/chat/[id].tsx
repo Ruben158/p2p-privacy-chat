@@ -487,7 +487,7 @@ export default function ChatScreen() {
             <View
               style={[
                 styles.typingPill,
-                { backgroundColor: colors.card, borderColor: colors.border },
+                { backgroundColor: colors.card, borderColor: colors.border, transform: [{ scaleY: -1 }] },
               ]}
             >
               <Text
