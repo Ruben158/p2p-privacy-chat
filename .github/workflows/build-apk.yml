@@ -1,145 +1,57 @@
-name: Build Android APK
+name: Build and publish debug APK & Web bundle
 
 on:
-  workflow_call:
   push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    branches: [ main ]
 
 jobs:
   build-android:
-    name: Build and publish debug APK & Web bundle
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
+          node-version: 18
 
-      - name: Set up Java 17
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.0
+          run_install: false
+
+      - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
+      - name: Install root dependencies
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Install Android platform tools
+      - name: Build Web Bundle & Android APK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" \
-            "platforms;android-34" "build-tools;34.0.0" \
-            "platforms;android-35" "build-tools;35.0.0"
+          cd artifacts/p2p-messenger
+          pnpm --config.verify-deps-before-run=false run build:web
+          npx @capacitor/cli sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Patch Capacitor CLI for tar v7 and JSON config
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          for p in Path("node_modules").rglob("*/@capacitor/cli/dist/util/template.js"):
-              text = p.read_text()
-              patched = text.replace(
-                  "tar_1.default.extract(",
-                  "(tar_1.default?.extract || tar_1.extract || require('tar').extract)(",
-              )
-              p.write_text(patched)
-              print(f"Patched {p}")
-
-          app_dir = Path("artifacts/p2p-messenger")
-          ts_cfg = app_dir / "capacitor.config.ts"
-          json_cfg = app_dir / "capacitor.config.json"
-          json_cfg.write_text(
-              json.dumps(
-                  {
-                      "appId": "app.p2pmessenger.mobile",
-                      "appName": "P2P Messenger",
-                      "webDir": "dist",
-                      "server": {"androidScheme": "https"},
-                  },
-                  indent=2,
-              )
-              + "\n"
-          )
-          if ts_cfg.exists():
-              ts_cfg.unlink()
-          PY
-
-      - name: Export the Expo web app and package web zip
-        run: |
-          pnpm --filter @workspace/p2p-messenger run build:web
-          cd artifacts/p2p-messenger/dist
-          zip -r ../../../p2p-messenger-web.zip .
-
-      - name: Create the Capacitor Android project
-        run: pnpm --filter @workspace/p2p-messenger run cap:add:android
-
-      - name: Sync the web app and add camera/audio/notification permissions
-        working-directory: artifacts/p2p-messenger
-        run: |
-          pnpm run cap:sync:android
-          python3 - <<'PY'
-          from pathlib import Path
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          contents = manifest.read_text()
-          marker = "    <application"
-          permissions = [
-              '    <uses-permission android:name="android.permission.INTERNET" />',
-              '    <uses-permission android:name="android.permission.CAMERA" />',
-              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
-              '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
-              '    <uses-permission android:name="android.permission.VIBRATE" />',
-              '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
-          ]
-          for line in permissions:
-              if line not in contents:
-                  contents = contents.replace(marker, line + "\n" + marker, 1)
-          manifest.write_text(contents)
-          PY
-
-      - name: Build app-debug.apk
-        working-directory: artifacts/p2p-messenger/android
-        run: ./gradlew --no-daemon assembleDebug
-
-      - name: Upload APK and Web artifacts
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: p2p-messenger-release-bundle
-          path: |
-            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
-            p2p-messenger-web.zip
+          name: app-debug
+          path: artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Publish APK and Web zip to GitHub Releases
-        if: github.event.repository.fork == false
-        uses: softprops/action-gh-release@v2
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: android-${{ github.run_id }}
-          name: Android & Web build ${{ github.run_number }}
-          prerelease: true
-          generate_release_notes: false
-          files: |
-            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
-            p2p-messenger-web.zip
+          files: artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: latest
+          overwrite: true
+          body: "Automated P2P Privacy Messenger Android Build with fixes."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
