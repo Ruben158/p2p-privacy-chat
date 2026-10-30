@@ -84,10 +84,11 @@ export function useThemeSettings() {
 
 export function useColors() {
   const ctx = useContext(ThemeContext);
+  const palette = ctx.palette ?? THEMES.emerald.dark;
   return {
-    ...ctx.palette,
+    ...palette,
     radius: colors.radius,
-    themeId: ctx.themeId,
-    themeMode: ctx.themeMode,
+    themeId: ctx.themeId ?? 'emerald',
+    themeMode: ctx.themeMode ?? 'dark',
   };
 }
