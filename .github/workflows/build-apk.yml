@@ -20,6 +20,24 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Cache Persistent Android Debug Keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/p2p-persistent-debug.keystore
+          key: p2p-android-debug-keystore-v1
+
+      - name: Ensure Persistent Keystore Exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/p2p-persistent-debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/p2p-persistent-debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          cp ~/.android/p2p-persistent-debug.keystore ~/.android/debug.keystore
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -35,6 +53,8 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build Web Bundle, Fix Icon Fonts & Sync Android
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           cd artifacts/p2p-messenger
           npx expo export --platform web --output-dir dist
@@ -57,7 +77,6 @@ jobs:
             let css = "<style>\n";
             for (const file of ttfFiles) {
               const base = path.basename(file);
-              // Extract clean font family name before hash (e.g. Ionicons.b4eb09...ttf -> Ionicons)
               const family = base.split(".")[0];
               const cleanName = family + ".ttf";
               fs.copyFileSync(file, path.join(fontsDir, cleanName));
@@ -69,7 +88,6 @@ jobs:
             }
             css += "</style></head>";
 
-            // Also rewrite deep pnpm font URLs inside JS bundles to /fonts/<Family>.ttf
             const jsDir = path.join("dist", "_expo", "static", "js", "web");
             for (const f of fs.readdirSync(jsDir)) {
               if (f.endsWith(".js")) {
@@ -84,12 +102,124 @@ jobs:
             let html = fs.readFileSync(indexHtmlPath, "utf8");
             html = html.replace("</head>", css);
             fs.writeFileSync(indexHtmlPath, html, "utf8");
-            console.log("Injected clean @font-face rules for", ttfFiles.length, "icon fonts.");
           '
           if [ ! -d "android" ]; then
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
+
+          cp ~/.android/p2p-persistent-debug.keystore android/app/debug.keystore
+
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+
+            // 1. Add Camera, Microphone & Audio permissions to AndroidManifest.xml
+            const manifestPath = "android/app/src/main/AndroidManifest.xml";
+            let manifest = fs.readFileSync(manifestPath, "utf8");
+            const perms = `
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />`;
+            if (!manifest.includes("android.permission.CAMERA")) {
+              manifest = manifest.replace("</manifest>", perms + "\n</manifest>");
+              fs.writeFileSync(manifestPath, manifest, "utf8");
+            }
+
+            // 2. Configure consistent signingConfig and incrementing versionCode in android/app/build.gradle
+            const gradlePath = "android/app/build.gradle";
+            let gradle = fs.readFileSync(gradlePath, "utf8");
+            const runNum = parseInt(process.env.BUILD_NUMBER || "100", 10) + 100;
+            gradle = gradle.replace(/versionCode\s+\d+/, "versionCode " + runNum);
+            if (!gradle.includes("storeFile file(\x27debug.keystore\x27)")) {
+              gradle = gradle.replace(
+                "buildTypes {",
+                `signingConfigs {
+        debug {
+            storeFile file(\x27debug.keystore\x27)
+            storePassword \x27android\x27
+            keyAlias \x27androiddebugkey\x27
+            keyPassword \x27android\x27
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }`
+              );
+            }
+            fs.writeFileSync(gradlePath, gradle, "utf8");
+
+            // 3. Patch MainActivity.java to request runtime Camera/Mic permissions & grant WebView getUserMedia
+            function findMainActivity(dir) {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  const found = findMainActivity(full);
+                  if (found) return found;
+                } else if (entry.name === "MainActivity.java") {
+                  return full;
+                }
+              }
+              return null;
+            }
+            const mainActPath = findMainActivity("android/app/src/main/java");
+            if (mainActPath) {
+              const src = fs.readFileSync(mainActPath, "utf8");
+              const pkgMatch = src.match(/package\s+([a-zA-Z0-9_.]+);/);
+              const pkg = pkgMatch ? pkgMatch[1] : "app.p2p.messenger";
+              const patchedMain = `package ${pkg};
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.webkit.PermissionRequest;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestMediaPermissionsIfNeeded();
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+            this.bridge.getWebView().setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    request.grant(request.getResources());
+                }
+            });
+        }
+    }
+
+    private void requestMediaPermissionsIfNeeded() {
+        String[] perms = new String[]{
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.MODIFY_AUDIO_SETTINGS
+        };
+        List<String> needed = new ArrayList<>();
+        for (String p : perms) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(p);
+            }
+        }
+        if (!needed.isEmpty()) {
+            ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), 1001);
+        }
+    }
+}
+`;
+              fs.writeFileSync(mainActPath, patchedMain, "utf8");
+            }
+          '
 
       - name: Build APK with Gradle
         run: |
