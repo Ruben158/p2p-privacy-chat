@@ -383,8 +383,8 @@ export default function ChatScreen() {
               ]}
             >
               {isConnected
-                ? 'E2EE · Direct P2P Tunnel'
-                : 'E2EE · Waiting for Peer'}
+                ? 'Live · Direct tunnel'
+                : 'Waiting for peer…'}
             </Text>
           </View>
         </View>
@@ -442,18 +442,8 @@ export default function ChatScreen() {
 
       <ConnectionBanner contactId={contact.id} compact />
 
-      <FlatList
-        inverted
-        data={[...chatMessages].reverse()}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        contentContainerStyle={[
-          styles.messageList,
-          chatMessages.length === 0 && styles.emptyMessageList,
-        ]}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={
+      {chatMessages.length === 0 ? (
+        <View style={[styles.messageList, styles.emptyMessageList]}>
           <View style={styles.emptyChat}>
             <View
               style={[
@@ -466,6 +456,29 @@ export default function ChatScreen() {
                 size={24}
                 color={colors.primary}
               />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+              End-to-End Encrypted with {contact.displayName}
+            </Text>
+            <Text
+              style={[styles.emptyCopy, { color: colors.mutedForeground }]}
+            >
+              Messages are encrypted on your device using X25519 + Ed25519 keys.
+              If {contact.displayName} is offline, messages queue locally and
+              deliver automatically the moment both apps are open.
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <FlatList
+          data={chatMessages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.messageList}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
               End-to-End Encrypted with {contact.displayName}
@@ -519,7 +532,7 @@ export default function ChatScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Feather name="image" size={18} color={colors.mutedForeground} />
+            <Feather name="plus" size={20} color={colors.foreground} />
           </Pressable>
           <TextInput
             value={draft}
@@ -534,7 +547,6 @@ export default function ChatScreen() {
             maxLength={4000}
             style={[
               styles.input,
-              Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null,
               {
                 backgroundColor: colors.card,
                 borderColor: colors.border,

@@ -49,7 +49,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {__DEV__ ? (
+      {(
         <Pressable
           onPress={() => setIsModalVisible(true)}
           accessibilityLabel="View error details"
@@ -65,7 +65,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         >
           <Feather name="alert-circle" size={20} color={colors.foreground} />
         </Pressable>
-      ) : null}
+      )}
 
       <View style={styles.content}>
         <Text style={[styles.title, { color: colors.foreground }]}>
@@ -73,7 +73,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         </Text>
 
         <Text style={[styles.message, { color: colors.mutedForeground }]}>
-          Please reload the app to continue.
+          {error?.message || 'Please reload the app to continue.'}
         </Text>
 
         <Pressable
@@ -95,7 +95,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         </Pressable>
       </View>
 
-      {__DEV__ ? (
+      {(
         <Modal
           visible={isModalVisible}
           animationType="slide"
@@ -162,7 +162,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
             </View>
           </View>
         </Modal>
-      ) : null}
+      )}
     </View>
   );
 }
