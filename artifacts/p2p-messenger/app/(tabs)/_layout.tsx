@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 import { Feather } from '@/components/AppIcons';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,23 +20,30 @@ export default function TabLayout() {
     [messages],
   );
 
+  const bottomPad = isWeb ? Math.max(insets.bottom, 12) : Math.max(insets.bottom, 10);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
         tabBarLabelStyle: {
-          fontSize: 10.5,
+          fontSize: 11,
+          lineHeight: 15,
           fontWeight: '700',
           marginTop: 2,
+          marginBottom: 2,
           letterSpacing: 0.2,
         },
         tabBarStyle: {
           position: 'absolute',
-          height: isWeb ? 80 : 62 + insets.bottom,
-          paddingTop: 8,
-          paddingBottom: isWeb ? 26 : Math.max(insets.bottom, 10),
+          height: isWeb ? 66 + bottomPad : 60 + bottomPad,
+          paddingTop: 6,
+          paddingBottom: bottomPad,
           backgroundColor: colors.card,
           borderTopColor: colors.border,
           borderTopWidth: 1,
