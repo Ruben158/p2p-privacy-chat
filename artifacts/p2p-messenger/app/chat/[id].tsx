@@ -31,6 +31,7 @@ function timeLabel(timestamp: number): string {
 
 export default function ChatScreen() {
   const colors = useColors();
+  
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Array.isArray(id) ? id[0] : id;
@@ -705,7 +706,7 @@ const styles = StyleSheet.create({
     height: 190,
     borderRadius: 12,
     marginBottom: 5,
-    backgroundColor: colors.card,
+    backgroundColor: "transparent",
   },
   messageText: { fontSize: 14, lineHeight: 20 },
   messageMeta: {

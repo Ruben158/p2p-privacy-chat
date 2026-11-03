@@ -26,13 +26,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <ErrorBoundary>
-          <ThemeProvider>
+        <ThemeProvider>
+          <ErrorBoundary>
             <MessengerProvider>
               <ThemedShell />
             </MessengerProvider>
-          </ThemeProvider>
-        </ErrorBoundary>
+          </ErrorBoundary>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

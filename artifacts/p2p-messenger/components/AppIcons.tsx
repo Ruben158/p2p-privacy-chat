@@ -1,17 +1,18 @@
 import React from 'react';
-import { StyleProp, ViewStyle } from 'react-native';
+import { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Path, Circle, Rect, Line, Polyline, Polygon } from 'react-native-svg';
 
 export interface IconProps {
   name: string;
   size?: number;
-  color?: string;
+  color?: ColorValue;
   style?: StyleProp<ViewStyle>;
 }
 
 export function Feather({ name, size = 20, color = '#10B981', style }: IconProps) {
+  const strokeColor = String(color);
   const strokeProps = {
-    stroke: color,
+    stroke: strokeColor,
     strokeWidth: 2,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
@@ -111,7 +112,7 @@ export function Feather({ name, size = 20, color = '#10B981', style }: IconProps
     case 'square':
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24" style={style}>
-          <Rect x="4" y="4" width="16" height="16" rx="2" ry="2" {...strokeProps} fill={color} />
+          <Rect x="4" y="4" width="16" height="16" rx="2" ry="2" {...strokeProps} fill={strokeColor} />
         </Svg>
       );
     case 'bell':
@@ -277,8 +278,9 @@ export function Feather({ name, size = 20, color = '#10B981', style }: IconProps
 }
 
 export function MaterialCommunityIcons({ name, size = 20, color = '#10B981', style }: IconProps) {
+  const strokeColor = String(color);
   const strokeProps = {
-    stroke: color,
+    stroke: strokeColor,
     strokeWidth: 2,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,

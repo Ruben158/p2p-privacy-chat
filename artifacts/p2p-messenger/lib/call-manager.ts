@@ -319,7 +319,7 @@ export class DirectCallManager {
     candidate: IceCandidatePayload,
   ): Promise<void> {
     if (session.peer?.remoteDescription) {
-      await session.peer.addIceCandidate(candidate);
+      await session.peer.addIceCandidate(candidate as RTCIceCandidateInit);
     } else if (session.pendingCandidates.length < 64) {
       session.pendingCandidates.push(candidate);
     }
@@ -329,7 +329,7 @@ export class DirectCallManager {
     const peer = session.peer;
     if (!peer?.remoteDescription || session.pendingCandidates.length === 0) return;
     const candidates = session.pendingCandidates.splice(0);
-    await Promise.all(candidates.map((candidate) => peer.addIceCandidate(candidate)));
+    await Promise.all(candidates.map((candidate) => peer.addIceCandidate(candidate as RTCIceCandidateInit)));
   }
 
   private candidateKey(contactId: string, callId: string): string {
