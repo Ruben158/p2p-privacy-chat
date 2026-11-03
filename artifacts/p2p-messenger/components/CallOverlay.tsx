@@ -29,7 +29,7 @@ export default function CallOverlay() {
 
   useEffect(() => {
     if (!callError) return;
-    Alert.alert('Call ended', callError);
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') { window.alert('Call ended: ' + callError); } else { Alert.alert('Call ended', callError); }
     clearCallError();
   }, [callError, clearCallError]);
 

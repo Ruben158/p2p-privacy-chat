@@ -130,10 +130,12 @@ export default function ChatScreen() {
     try {
       await startCall(contactId, mode);
     } catch (error) {
-      Alert.alert(
-        'Call could not start',
-        error instanceof Error ? error.message : 'Please try again.',
-      );
+      const msg = error instanceof Error ? error.message : 'Please try again.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('Call could not start: ' + msg);
+      } else {
+        Alert.alert('Call could not start', msg);
+      }
     }
   };
 
