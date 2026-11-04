@@ -17,31 +17,14 @@ if (!manifest.includes("android.permission.CAMERA")) {
   fs.writeFileSync(manifestPath, manifest, "utf8");
 }
 
-// 2. Configure consistent signingConfig and incrementing versionCode in android/app/build.gradle
+// 2. Increment versionCode in android/app/build.gradle so updates install cleanly over existing APKs
 const gradlePath = "android/app/build.gradle";
 let gradle = fs.readFileSync(gradlePath, "utf8");
 const runNum = parseInt(process.env.BUILD_NUMBER || "100", 10) + 100;
 gradle = gradle.replace(/versionCode\s+\d+/, "versionCode " + runNum);
-if (!gradle.includes("storeFile file('debug.keystore')")) {
-  const signingBlock = [
-    "    signingConfigs {",
-    "        debug {",
-    "            storeFile file('debug.keystore')",
-    "            storePassword 'android'",
-    "            keyAlias 'androiddebugkey'",
-    "            keyPassword 'android'",
-    "        }",
-    "    }",
-    "    buildTypes {",
-    "        debug {",
-    "            signingConfig signingConfigs.debug",
-    "        }",
-  ].join("\n");
-  gradle = gradle.replace("    buildTypes {", signingBlock);
-}
 fs.writeFileSync(gradlePath, gradle, "utf8");
 
-// 3. Patch MainActivity.java to request runtime Camera/Mic permissions & grant WebView getUserMedia
+// 3. Patch MainActivity.java to request runtime Camera/Mic permissions & enable autoplay for WebRTC audio/video
 function findMainActivity(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -67,10 +50,10 @@ if (mainActPath) {
     "import android.content.pm.PackageManager;",
     "import android.os.Bundle;",
     "import android.webkit.PermissionRequest;",
+    "import android.webkit.WebChromeClient;",
     "import androidx.core.app.ActivityCompat;",
     "import androidx.core.content.ContextCompat;",
     "import com.getcapacitor.BridgeActivity;",
-    "import com.getcapacitor.BridgeWebChromeClient;",
     "import java.util.ArrayList;",
     "import java.util.List;",
     "",
@@ -79,9 +62,14 @@ if (mainActPath) {
     "    public void onCreate(Bundle savedInstanceState) {",
     "        super.onCreate(savedInstanceState);",
     "        requestMediaPermissionsIfNeeded();",
+    "    }",
+    "",
+    "    @Override",
+    "    public void onStart() {",
+    "        super.onStart();",
     "        if (this.bridge != null && this.bridge.getWebView() != null) {",
     "            this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);",
-    "            this.bridge.getWebView().setWebChromeClient(new BridgeWebChromeClient(this.bridge) {",
+    "            this.bridge.getWebView().setWebChromeClient(new WebChromeClient() {",
     "                @Override",
     "                public void onPermissionRequest(final PermissionRequest request) {",
     "                    request.grant(request.getResources());",
@@ -110,4 +98,4 @@ if (mainActPath) {
   ].join("\n");
   fs.writeFileSync(mainActPath, patchedMain, "utf8");
 }
-console.log("Android permissions, keystore signing, and MainActivity WebRTC bridge patched.");
+console.log("Android permissions, versionCode, and MainActivity WebRTC permissions patched cleanly.");
