@@ -481,21 +481,6 @@ export default function ChatScreen() {
           keyboardShouldPersistTaps="handled"
         />
       )}
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              End-to-End Encrypted with {contact.displayName}
-            </Text>
-            <Text
-              style={[styles.emptyCopy, { color: colors.mutedForeground }]}
-            >
-              Messages are encrypted on your device using X25519 + Ed25519 keys.
-              If {contact.displayName} is offline, messages queue locally and
-              deliver automatically the moment both apps are open.
-            </Text>
-          </View>
-        }
-        
-      />
 
       {typing[contact.id] ? (
         <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.background }}>
