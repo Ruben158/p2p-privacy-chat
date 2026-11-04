@@ -2,8 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors, { ColorPalette, THEMES, ThemeId, ThemeMode } from '@/constants/colors';
 
-const STORAGE_THEME_KEY = 'p2p_messenger_theme_id_v1';
-const STORAGE_MODE_KEY = 'p2p_messenger_theme_mode_v1';
+const STORAGE_THEME_KEY = 'p2p_messenger_theme_id_v2';
+const STORAGE_MODE_KEY = 'p2p_messenger_theme_mode_v2';
 
 interface ThemeContextValue {
   themeId: ThemeId;
@@ -14,15 +14,15 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  themeId: 'emerald',
+  themeId: 'startup',
   themeMode: 'dark',
-  palette: THEMES.emerald.dark,
+  palette: THEMES.startup.dark,
   setThemeId: () => {},
   setThemeMode: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeId, setThemeIdState] = useState<ThemeId>('emerald');
+  const [themeId, setThemeIdState] = useState<ThemeId>('startup');
   const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     void AsyncStorage.setItem(STORAGE_MODE_KEY, mode).catch(() => {});
   }, []);
 
-  const palette = THEMES[themeId]?.[themeMode] ?? THEMES.emerald.dark;
+  const palette = THEMES[themeId]?.[themeMode] ?? THEMES.startup.dark;
 
   const value = useMemo(
     () => ({
@@ -84,11 +84,11 @@ export function useThemeSettings() {
 
 export function useColors() {
   const ctx = useContext(ThemeContext);
-  const palette = ctx.palette ?? THEMES.emerald.dark;
+  const palette = ctx.palette ?? THEMES.startup.dark;
   return {
     ...palette,
     radius: colors.radius,
-    themeId: ctx.themeId ?? 'emerald',
+    themeId: ctx.themeId ?? 'startup',
     themeMode: ctx.themeMode ?? 'dark',
   };
 }
