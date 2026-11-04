@@ -46,24 +46,27 @@ export default function ConnectionBanner({
     : pendingOutboxCount;
 
   let dotColor = colors.primary;
-  let badgeBg = 'rgba(16, 185, 129, 0.14)';
-  let badgeBorder = 'rgba(16, 185, 129, 0.35)';
+  let badgeBg = colors.card;
+  let badgeBorder = colors.border;
+  let pillTextColor = colors.primaryForeground;
   let statusPillText = 'CONNECTED';
   let title = '';
   let subtitle = '';
 
   if (nodeStatus === 'offline') {
     dotColor = colors.destructive;
-    badgeBg = 'rgba(239, 68, 68, 0.14)';
-    badgeBorder = 'rgba(239, 68, 68, 0.35)';
+    badgeBg = colors.card;
+    badgeBorder = colors.destructive;
+    pillTextColor = colors.destructiveForeground;
     statusPillText = 'OFFLINE';
     title = 'Device Offline · Not Connected';
     subtitle = 'No network link — tap Sync to reconnect when back online';
   } else if (contactId && contact) {
     if (peerStatus === 'connected') {
       dotColor = colors.primary;
-      badgeBg = 'rgba(16, 185, 129, 0.14)';
-      badgeBorder = 'rgba(16, 185, 129, 0.35)';
+      badgeBg = colors.accent;
+      badgeBorder = colors.primary;
+      pillTextColor = colors.primaryForeground;
       statusPillText = 'CONNECTED';
       title = `Connected directly to ${contact.displayName}`;
       subtitle =
@@ -71,9 +74,10 @@ export default function ConnectionBanner({
           ? `Flushing ${contactQueuedCount} queued message${contactQueuedCount === 1 ? '' : 's'}…`
           : 'Live end-to-end encrypted P2P tunnel active';
     } else {
-      dotColor = '#F59E0B';
-      badgeBg = 'rgba(245, 158, 11, 0.13)';
-      badgeBorder = 'rgba(245, 158, 11, 0.35)';
+      dotColor = colors.primary;
+      badgeBg = colors.card;
+      badgeBorder = colors.border;
+      pillTextColor = colors.primaryForeground;
       statusPillText = 'WAITING';
       title = `Not Connected to ${contact.displayName} Yet`;
       subtitle =
@@ -84,11 +88,17 @@ export default function ConnectionBanner({
   } else {
     if (contacts.length === 0) {
       dotColor = colors.primary;
+      badgeBg = colors.card;
+      badgeBorder = colors.border;
+      pillTextColor = colors.primaryForeground;
       statusPillText = 'ONLINE';
       title = 'Device Online · P2P Node Ready';
       subtitle = 'Add a contact via QR code or invite link to start chatting';
     } else if (connectedPeersCount > 0) {
       dotColor = colors.primary;
+      badgeBg = colors.accent;
+      badgeBorder = colors.primary;
+      pillTextColor = colors.primaryForeground;
       statusPillText = 'CONNECTED';
       title = `Connected · ${connectedPeersCount} of ${contacts.length} peer${contacts.length === 1 ? '' : 's'} live`;
       subtitle =
@@ -96,9 +106,10 @@ export default function ConnectionBanner({
           ? `Delivering ${pendingOutboxCount} queued message${pendingOutboxCount === 1 ? '' : 's'}…`
           : 'Direct P2P WebRTC tunnel active & receiving messages';
     } else {
-      dotColor = '#F59E0B';
-      badgeBg = 'rgba(245, 158, 11, 0.13)';
-      badgeBorder = 'rgba(245, 158, 11, 0.35)';
+      dotColor = colors.primary;
+      badgeBg = colors.card;
+      badgeBorder = colors.border;
+      pillTextColor = colors.primaryForeground;
       statusPillText = 'SEARCHING';
       title = `Device Online · 0 of ${contacts.length} peers connected`;
       subtitle =
@@ -139,7 +150,9 @@ export default function ConnectionBanner({
                 { backgroundColor: dotColor },
               ]}
             >
-              <Text style={styles.stateBadgeText}>{statusPillText}</Text>
+              <Text style={[styles.stateBadgeText, { color: pillTextColor }]}>
+                {statusPillText}
+              </Text>
             </View>
             <Text
               numberOfLines={1}
@@ -157,9 +170,11 @@ export default function ConnectionBanner({
                 <MaterialCommunityIcons
                   name="clock-outline"
                   size={11}
-                  color="#F59E0B"
+                  color={colors.primary}
                 />
-                <Text style={styles.queueBadgeText}>{contactQueuedCount}</Text>
+                <Text style={[styles.queueBadgeText, { color: colors.primary }]}>
+                  {contactQueuedCount}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -180,7 +195,7 @@ export default function ConnectionBanner({
         style={({ pressed }) => [
           styles.syncButton,
           {
-            backgroundColor: colors.card,
+            backgroundColor: colors.secondary,
             borderColor: colors.border,
             opacity: pressed || reconnecting ? 0.7 : 1,
           },
@@ -247,14 +262,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   stateBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 5,
   },
   stateBadgeText: {
     fontSize: 8.5,
     fontWeight: '900',
-    color: '#061012',
     letterSpacing: 0.4,
   },
   title: {
@@ -279,7 +293,6 @@ const styles = StyleSheet.create({
   queueBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#F59E0B',
   },
   syncButton: {
     height: 30,

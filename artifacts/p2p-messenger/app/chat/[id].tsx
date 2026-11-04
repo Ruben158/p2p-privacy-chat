@@ -660,7 +660,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
-    transform: [{ scaleY: -1 }],
   },
   lockIcon: {
     width: 56,
@@ -685,7 +684,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     marginBottom: 8,
-    transform: [{ scaleY: -1 }],
   },
   typingText: { fontSize: 11, fontWeight: '700' },
   messageLine: { flexDirection: 'row', marginVertical: 4 },
