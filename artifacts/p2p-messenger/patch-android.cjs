@@ -184,7 +184,11 @@ if (mainActPath) {
     "import android.net.Uri;",
     "import android.os.Build;",
     "import android.os.Bundle;",
-    "import android.webkit.JavascriptInterface;",
+    "import android.graphics.Color;
+import android.view.View;
+import android.view.Window;
+import androidx.core.view.WindowInsetsControllerCompat;
+import android.webkit.JavascriptInterface;",
     "import android.webkit.PermissionRequest;",
     "import android.webkit.ValueCallback;",
     "import android.webkit.WebChromeClient;",
