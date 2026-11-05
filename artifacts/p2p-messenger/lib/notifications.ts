@@ -4,6 +4,16 @@ import type { AppPreferences } from './types';
 
 const PREFS_STORAGE_KEY = 'p2p-messenger:preferences:v1';
 
+interface AndroidBridge {
+  notify?: (title: string, body: string, tag: string) => void;
+}
+
+function getAndroidBridge(): AndroidBridge | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as { AndroidNative?: AndroidBridge };
+  return w.AndroidNative ?? null;
+}
+
 export const DEFAULT_PREFERENCES: AppPreferences = {
   notificationsEnabled: true,
   soundEnabled: true,
@@ -49,17 +59,22 @@ export function getNotificationPermissionState():
   | 'denied'
   | 'default'
   | 'unsupported' {
+  if (getAndroidBridge()) {
+    return 'granted';
+  }
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return 'granted';
   }
   if (!('Notification' in window)) {
-    // Capacitor Android WebView uses in-app + audio/vibration notifications
     return 'granted';
   }
   return Notification.permission;
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
+  if (getAndroidBridge()) {
+    return true;
+  }
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return true;
   }
@@ -150,7 +165,7 @@ export function playNotificationChime(kind: 'message' | 'call' = 'message'): voi
       osc.stop(now + idx * 0.11 + 0.27);
     });
   } catch {
-    // Ignore audio playback errors if user hasn't interacted with the page yet
+    // Ignore audio playback errors
   }
 }
 
@@ -160,6 +175,20 @@ export async function dispatchSystemNotification(options: {
   tag?: string;
   onClick?: () => void;
 }): Promise<void> {
+  const bridge = getAndroidBridge();
+  if (bridge && typeof bridge.notify === 'function') {
+    try {
+      bridge.notify(
+        options.title,
+        options.body,
+        options.tag ?? 'p2p-messenger',
+      );
+      return;
+    } catch {
+      // Fallback to web notifications
+    }
+  }
+
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
 

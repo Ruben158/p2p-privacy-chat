@@ -17,7 +17,7 @@ export interface Contact extends PublicIdentity {
 
 export interface MessageContent {
   id: string;
-  kind: 'text' | 'image' | 'audio';
+  kind: 'text' | 'image' | 'audio' | 'video' | 'file';
   text?: string;
   fileName?: string;
   mimeType?: string;

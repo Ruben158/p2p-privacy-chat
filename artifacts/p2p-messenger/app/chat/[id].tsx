@@ -139,11 +139,53 @@ export default function ChatScreen() {
     }
   };
 
-  const handleImage = async () => {
+  const handleDownloadAttachment = (item: ChatMessage) => {
+    if (!item.content.data || typeof document === "undefined") return;
+    const mime = item.content.mimeType ?? "application/octet-stream";
+    const name = item.content.fileName ?? `attachment-${item.id.slice(0, 6)}`;
+    const link = document.createElement("a");
+    link.href = `data:${mime};base64,${item.content.data}`;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleAttachment = async () => {
     if (!contactId) return;
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.apk,.csv,.json,*/*";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        setSending(true);
+        try {
+          const mime = (file.type || "").toLowerCase();
+          const kind: "image" | "video" | "audio" | "file" =
+            mime.startsWith("image/")
+              ? "image"
+              : mime.startsWith("video/")
+                ? "video"
+                : mime.startsWith("audio/")
+                  ? "audio"
+                  : "file";
+          await sendAttachment(contactId, file, kind);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Try again.";
+          if (typeof window !== "undefined") window.alert(msg);
+          else Alert.alert("Attachment not sent", msg);
+        } finally {
+          setSending(false);
+        }
+      };
+      input.click();
+      return;
+    }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ["images", "videos"],
         quality: 0.82,
         allowsMultipleSelection: false,
       });
@@ -153,15 +195,16 @@ export default function ChatScreen() {
       if (!file) {
         const response = await fetch(asset.uri);
         const blob = await response.blob();
-        file = new File([blob], asset.fileName ?? 'image.jpg', {
-          type: asset.mimeType ?? blob.type ?? 'image/jpeg',
+        file = new File([blob], asset.fileName ?? "attachment", {
+          type: asset.mimeType ?? blob.type ?? "application/octet-stream",
         });
       }
-      await sendAttachment(contactId, file, 'image');
+      const isVideo = (asset.type === "video") || (file.type || "").startsWith("video/");
+      await sendAttachment(contactId, file, isVideo ? "video" : "image");
     } catch (error) {
       Alert.alert(
-        'Photo not sent',
-        error instanceof Error ? error.message : 'Try again.',
+        "Attachment not sent",
+        error instanceof Error ? error.message : "Try again.",
       );
     }
   };
@@ -268,6 +311,46 @@ export default function ChatScreen() {
               mimeType={item.content.mimeType ?? 'audio/webm'}
             />
           ) : null}
+          {item.content.kind === 'video' && item.content.data ? (
+            Platform.OS === 'web' ? (
+              <View style={{ marginBottom: 6, borderRadius: 12, overflow: 'hidden' }}>
+                {React.createElement('video', {
+                  src: `data:${item.content.mimeType ?? 'video/mp4'};base64,${item.content.data}`,
+                  controls: true,
+                  playsInline: true,
+                  style: { width: 230, maxHeight: 220, borderRadius: 12, backgroundColor: '#000' },
+                })}
+              </View>
+            ) : null
+          ) : null}
+          {item.content.kind === 'file' && item.content.data ? (
+            <Pressable
+              onPress={() => handleDownloadAttachment(item)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingVertical: 8,
+                paddingHorizontal: 10,
+                borderRadius: 12,
+                backgroundColor: colors.secondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginBottom: 4,
+              }}
+            >
+              <Feather name="file-text" size={20} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: colors.foreground }}>
+                  {item.content.fileName ?? 'Document'}
+                </Text>
+                <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>
+                  Tap to download / open
+                </Text>
+              </View>
+              <Feather name="download" size={16} color={colors.primary} />
+            </Pressable>
+          ) : null}
           {item.content.text ? (
             <Text style={[styles.messageText, { color: colors.foreground }]}>
               {item.content.text}
@@ -319,7 +402,7 @@ export default function ChatScreen() {
         <Text style={{ color: colors.foreground }}>
           This contact is not available on this device.
         </Text>
-        <Pressable onPress={() => router.back()} style={{ padding: 15 }}>
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={{ padding: 15 }}>
           <Text style={{ color: colors.primary }}>Go back</Text>
         </Pressable>
       </View>
@@ -338,7 +421,7 @@ export default function ChatScreen() {
         ]}
       >
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           accessibilityLabel="Back to chats"
           style={styles.backButton}
         >
@@ -512,7 +595,7 @@ export default function ChatScreen() {
       >
         <View style={styles.composerRow}>
           <Pressable
-            onPress={() => void handleImage()}
+            onPress={() => void handleAttachment()}
             accessibilityLabel="Attach photo"
             style={[
               styles.composerIcon,

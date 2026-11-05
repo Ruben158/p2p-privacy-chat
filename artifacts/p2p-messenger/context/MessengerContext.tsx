@@ -82,7 +82,7 @@ interface MessengerContextValue {
   addContact(identity: PublicIdentity): Promise<Contact>;
   removeContact(contactId: string): Promise<void>;
   sendText(contactId: string, text: string): Promise<void>;
-  sendAttachment(contactId: string, file: File, kind: 'image' | 'audio'): Promise<void>;
+  sendAttachment(contactId: string, file: File, kind: 'image' | 'audio' | 'video' | 'file'): Promise<void>;
   sendTyping(contactId: string, active: boolean): Promise<void>;
   markIncomingRead(contactId: string): Promise<void>;
   startCall(contactId: string, mode: CallMode): Promise<void>;
@@ -121,6 +121,8 @@ function upsertOutboxItem(
 function previewForNotification(content: MessageContent): string {
   if (content.kind === 'image') return 'Sent a photo';
   if (content.kind === 'audio') return 'Sent a voice note';
+  if (content.kind === 'video') return 'Sent a video';
+  if (content.kind === 'file') return `Sent a file: ${content.fileName ?? 'document'}`;
   return content.text ?? 'New encrypted message';
 }
 
@@ -688,18 +690,22 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
   );
 
   const sendAttachment = useCallback(
-    async (contactId: string, file: File, kind: 'image' | 'audio') => {
-      if (file.size > 5 * 1024 * 1024) {
+    async (contactId: string, file: File, kind: 'image' | 'audio' | 'video' | 'file') => {
+      if (file.size > 15 * 1024 * 1024) {
         throw new Error(
-          'Attachments are limited to 5 MB so they fit reliably on mobile connections.',
+          "Attachments are limited to 15 MB so they transfer reliably over P2P connections."
         );
       }
       const data = new Uint8Array(await file.arrayBuffer());
+      const defaultName =
+        kind === "image" ? "image.jpg" : kind === "video" ? "video.mp4" : kind === "audio" ? "voice-note.webm" : "document";
+      const defaultMime =
+        kind === "image" ? "image/jpeg" : kind === "video" ? "video/mp4" : kind === "audio" ? "audio/webm" : "application/octet-stream";
       await sendContent(contactId, {
         id: randomId(),
         kind,
-        fileName: file.name || (kind === 'image' ? 'image' : 'voice-note'),
-        mimeType: file.type || (kind === 'image' ? 'image/jpeg' : 'audio/webm'),
+        fileName: file.name || defaultName,
+        mimeType: file.type || defaultMime,
         data: encodeAttachment(data),
         createdAt: Date.now(),
       });
