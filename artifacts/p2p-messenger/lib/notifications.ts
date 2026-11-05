@@ -5,13 +5,12 @@ import type { AppPreferences } from './types';
 const PREFS_STORAGE_KEY = 'p2p-messenger:preferences:v1';
 
 interface AndroidBridge {
-  notify?: (title: string, body: string, tag: string) => void;
+  showNotification?: (title: string, body: string, tag: string) => void;
 }
 
 function getAndroidBridge(): AndroidBridge | null {
   if (typeof window === 'undefined') return null;
-  const w = window as unknown as { AndroidNative?: AndroidBridge };
-  return w.AndroidNative ?? null;
+  return (window as unknown as { AndroidNative?: AndroidBridge }).AndroidNative ?? null;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -59,9 +58,7 @@ export function getNotificationPermissionState():
   | 'denied'
   | 'default'
   | 'unsupported' {
-  if (getAndroidBridge()) {
-    return 'granted';
-  }
+  if (getAndroidBridge()) return 'granted';
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return 'granted';
   }
@@ -72,9 +69,7 @@ export function getNotificationPermissionState():
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (getAndroidBridge()) {
-    return true;
-  }
+  if (getAndroidBridge()) return true;
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return true;
   }
@@ -105,9 +100,6 @@ function ensureAudioUnlockListener(): void {
     const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') {
       void ctx.resume().catch(() => undefined);
-    }
-    if ('Notification' in window && Notification.permission === 'default') {
-      void Notification.requestPermission().catch(() => undefined);
     }
   };
   window.addEventListener('pointerdown', unlock, { passive: true });
@@ -175,10 +167,10 @@ export async function dispatchSystemNotification(options: {
   tag?: string;
   onClick?: () => void;
 }): Promise<void> {
-  const bridge = getAndroidBridge();
-  if (bridge && typeof bridge.notify === 'function') {
+  const androidBridge = getAndroidBridge();
+  if (androidBridge && typeof androidBridge.showNotification === 'function') {
     try {
-      bridge.notify(
+      androidBridge.showNotification(
         options.title,
         options.body,
         options.tag ?? 'p2p-messenger',
@@ -228,6 +220,6 @@ export async function dispatchSystemNotification(options: {
       };
     }
   } catch {
-    // Ignore on browsers that disallow direct Notification constructor
+    // Ignore
   }
 }

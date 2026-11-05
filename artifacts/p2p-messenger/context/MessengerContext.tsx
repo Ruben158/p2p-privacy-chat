@@ -691,20 +691,22 @@ export function MessengerProvider({ children }: { children: React.ReactNode }) {
 
   const sendAttachment = useCallback(
     async (contactId: string, file: File, kind: 'image' | 'audio' | 'video' | 'file') => {
-      if (file.size > 15 * 1024 * 1024) {
-        throw new Error(
-          "Attachments are limited to 15 MB so they transfer reliably over P2P connections."
-        );
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error("Attachments are limited to 20 MB.");
       }
       const data = new Uint8Array(await file.arrayBuffer());
-      const defaultName =
-        kind === "image" ? "image.jpg" : kind === "video" ? "video.mp4" : kind === "audio" ? "voice-note.webm" : "document";
       const defaultMime =
-        kind === "image" ? "image/jpeg" : kind === "video" ? "video/mp4" : kind === "audio" ? "audio/webm" : "application/octet-stream";
+        kind === "image"
+          ? "image/jpeg"
+          : kind === "video"
+            ? "video/mp4"
+            : kind === "audio"
+              ? "audio/webm"
+              : "application/octet-stream";
       await sendContent(contactId, {
         id: randomId(),
         kind,
-        fileName: file.name || defaultName,
+        fileName: file.name || (kind + "-" + Date.now()),
         mimeType: file.type || defaultMime,
         data: encodeAttachment(data),
         createdAt: Date.now(),

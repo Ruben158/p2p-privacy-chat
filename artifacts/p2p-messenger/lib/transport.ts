@@ -8,8 +8,8 @@ import type {
 } from './types';
 
 const appId = 'org.p2pmessenger.direct.v1';
-// CRITICAL: Trystero enforces a strict 12-byte max length on action names!
 const actionName = 'p2p-msg-v1';
+const MAX_CHUNK_CHARS = 12_000;
 
 const NOSTR_RELAYS = [
   'wss://relay.damus.io',
@@ -43,10 +43,20 @@ const RTC_CONFIG: RTCConfiguration = {
   ],
 };
 
+type ChunkFrame = {
+  __chunk: true;
+  id: string;
+  idx: number;
+  total: number;
+  part: string;
+};
+
+type WirePacket = EncryptedEnvelope | ChunkFrame;
+
 type NormalizedAction = {
-  send: (packet: EncryptedEnvelope, peers?: string[]) => Promise<void>;
+  send: (packet: WirePacket, peers?: string[]) => Promise<void>;
   setOnMessage: (
-    handler: (packet: EncryptedEnvelope, peerId?: string) => void,
+    handler: (packet: WirePacket, peerId?: string) => void,
   ) => void;
 };
 
@@ -75,14 +85,13 @@ type Session = {
 };
 
 function normalizeRoomAction(rawAction: unknown): NormalizedAction {
-  // Case 1: Standard Trystero tuple [sendFn, receiveFn, onProgressFn]
   if (Array.isArray(rawAction) && typeof rawAction[0] === 'function') {
     const sendFn = rawAction[0] as (
-      data: EncryptedEnvelope,
+      data: WirePacket,
       targetPeers?: string[] | string | null,
     ) => Promise<unknown> | unknown;
     const receiveFn = rawAction[1] as (
-      cb: (data: EncryptedEnvelope, peerId: string) => void,
+      cb: (data: WirePacket, peerId: string) => void,
     ) => void;
 
     return {
@@ -101,14 +110,13 @@ function normalizeRoomAction(rawAction: unknown): NormalizedAction {
     };
   }
 
-  // Case 2: Object-style action { send, onMessage }
   const objAction = rawAction as {
     send?: (
-      data: EncryptedEnvelope,
+      data: WirePacket,
       options?: unknown,
     ) => Promise<unknown> | unknown;
     onMessage?:
-      | ((data: EncryptedEnvelope, context?: { peerId?: string }) => void)
+      | ((data: WirePacket, context?: { peerId?: string }) => void)
       | null;
   };
 
@@ -116,7 +124,6 @@ function normalizeRoomAction(rawAction: unknown): NormalizedAction {
     send: async (packet, peers) => {
       if (typeof objAction?.send !== 'function') return;
       try {
-        // Send to all peers in the private 1-to-1 room
         await Promise.resolve(objAction.send(packet));
       } catch {
         if (peers && peers.length > 0) {
@@ -144,6 +151,10 @@ export interface TransportCallbacks {
 export class P2PManager {
   private sessions = new Map<string, Session>();
   private authenticated = new Set<string>();
+  private incomingChunks = new Map<
+    string,
+    { parts: string[]; received: number; total: number; createdAt: number }
+  >();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private reannounceInterval: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
@@ -183,6 +194,9 @@ export class P2PManager {
       }
       this.callbacks.onNodeStatus?.('online');
       const now = Date.now();
+      for (const [k, v] of this.incomingChunks.entries()) {
+        if (now - v.createdAt > 180_000) this.incomingChunks.delete(k);
+      }
       for (const [contactId, session] of this.sessions.entries()) {
         this.syncRoomPeers(session);
         const hasPeers = session.links.some((link) => link.peers.size > 0);
@@ -204,7 +218,7 @@ export class P2PManager {
           );
         }
       }
-    }, 4_000);
+    }, 2_500);
 
     if (this.reannounceInterval) clearInterval(this.reannounceInterval);
     this.reannounceInterval = setInterval(() => {
@@ -217,12 +231,12 @@ export class P2PManager {
           this.callbacks.onPeerAvailable(contactId);
         } else if (
           !this.authenticated.has(contactId) &&
-          now - session.openedAt > 90_000
+          now - session.openedAt > 45_000
         ) {
           void this.rejoinSession(contactId, session.contact);
         }
       }
-    }, 30_000);
+    }, 15_000);
   }
 
   private syncRoomPeers(session: Session): void {
@@ -263,13 +277,11 @@ export class P2PManager {
 
     const handleVisibility = () => {
       if (this.stopped) return;
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        if (this.isDeviceOnline()) {
-          this.callbacks.onNodeStatus?.('online');
-          for (const [contactId, session] of this.sessions.entries()) {
-            this.syncRoomPeers(session);
-            this.scheduleHandshakeBurst(contactId, session);
-          }
+      if (this.isDeviceOnline()) {
+        this.callbacks.onNodeStatus?.('online');
+        for (const [contactId, session] of this.sessions.entries()) {
+          this.syncRoomPeers(session);
+          this.scheduleHandshakeBurst(contactId, session);
         }
       }
     };
@@ -312,6 +324,54 @@ export class P2PManager {
         await this.openSession(contact);
       }),
     );
+  }
+
+  private handleIncomingWirePacket(
+    contactId: string,
+    session: Session,
+    wire: WirePacket,
+  ): void {
+    if ('__chunk' in wire && wire.__chunk === true) {
+      const key = `${contactId}:${wire.id}`;
+      let entry = this.incomingChunks.get(key);
+      if (!entry) {
+        entry = {
+          parts: new Array(wire.total).fill(''),
+          received: 0,
+          total: wire.total,
+          createdAt: Date.now(),
+        };
+        this.incomingChunks.set(key, entry);
+      }
+      if (wire.idx >= 0 && wire.idx < entry.total && !entry.parts[wire.idx]) {
+        entry.parts[wire.idx] = wire.part;
+        entry.received += 1;
+      }
+      if (entry.received >= entry.total) {
+        this.incomingChunks.delete(key);
+        try {
+          const fullJson = entry.parts.join('');
+          const parsed = JSON.parse(fullJson) as EncryptedEnvelope;
+          void Promise.resolve(this.callbacks.onPacket(contactId, parsed)).catch(
+            () => undefined,
+          );
+        } catch {
+          // Ignore malformed chunk assembly
+        }
+      }
+      return;
+    }
+
+    void Promise.resolve(
+      this.callbacks.onPacket(contactId, wire as EncryptedEnvelope),
+    ).catch((error: unknown) => {
+      this.callbacks.onError?.(
+        contactId,
+        error instanceof Error
+          ? error.message
+          : 'Could not process an encrypted message.',
+      );
+    });
   }
 
   private async openSession(contact: Contact): Promise<void> {
@@ -362,7 +422,7 @@ export class P2PManager {
             {
               appId,
               relayUrls: strategy.relayUrls,
-              maxReceiveBytes: 12 * 1024 * 1024,
+              maxReceiveBytes: 25 * 1024 * 1024,
               rtcConfig: RTC_CONFIG,
             },
             roomId,
@@ -382,16 +442,7 @@ export class P2PManager {
             if (this.stopped || !packet || typeof packet !== 'object') return;
             if (peerId) link.peers.add(peerId);
             session.lastPacketAt = Date.now();
-            void Promise.resolve(this.callbacks.onPacket(contact.id, packet)).catch(
-              (error: unknown) => {
-                this.callbacks.onError?.(
-                  contact.id,
-                  error instanceof Error
-                    ? error.message
-                    : 'Could not process an encrypted message.',
-                );
-              },
-            );
+            this.handleIncomingWirePacket(contact.id, session, packet);
           });
 
           const handlePeerJoin = (peerId: string) => {
@@ -442,7 +493,6 @@ export class P2PManager {
             room.onPeerLeave = handlePeerLeave;
           }
 
-          // Immediately trigger a handshake attempt in case peers are already present
           this.scheduleHandshakeBurst(contact.id, session);
         } catch (error) {
           if (!this.stopped) {
@@ -463,7 +513,7 @@ export class P2PManager {
     session.handshakeTimers = [];
 
     this.callbacks.onPeerAvailable(contactId);
-    const delays = [250, 800, 1800, 3500, 6500];
+    const delays = [150, 500, 1200, 2500, 5000];
     for (const delay of delays) {
       const timer = setTimeout(() => {
         if (this.stopped || this.sessions.get(contactId) !== session) return;
@@ -541,13 +591,42 @@ export class P2PManager {
     const session = this.sessions.get(contactId);
     if (!session || session.links.length === 0) return false;
     this.syncRoomPeers(session);
+
+    const serialized = JSON.stringify(packet);
+    const needsChunking = serialized.length > MAX_CHUNK_CHARS;
+    const chunkId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const chunks: string[] = [];
+    if (needsChunking) {
+      for (let i = 0; i < serialized.length; i += MAX_CHUNK_CHARS) {
+        chunks.push(serialized.slice(i, i + MAX_CHUNK_CHARS));
+      }
+    }
+
     let sent = false;
     await Promise.all(
       session.links.map(async (link) => {
         try {
           const targets =
             link.peers.size > 0 ? Array.from(link.peers) : undefined;
-          await link.action.send(packet, targets);
+          if (!needsChunking) {
+            await link.action.send(packet, targets);
+          } else {
+            for (let idx = 0; idx < chunks.length; idx++) {
+              await link.action.send(
+                {
+                  __chunk: true,
+                  id: chunkId,
+                  idx,
+                  total: chunks.length,
+                  part: chunks[idx],
+                },
+                targets,
+              );
+              if (idx % 3 === 2) {
+                await new Promise((r) => setTimeout(r, 4));
+              }
+            }
+          }
           sent = true;
         } catch {
           // Try remaining links

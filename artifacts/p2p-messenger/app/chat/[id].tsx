@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   Image,
   Platform,
@@ -12,7 +13,6 @@ import {
   View,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@/components/AppIcons';
-
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,9 +29,22 @@ function timeLabel(timestamp: number): string {
   });
 }
 
+function triggerFileDownload(base64Data: string, mimeType: string, fileName: string) {
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+  try {
+    const link = document.createElement('a');
+    link.href = `data:${mimeType};base64,${base64Data}`;
+    link.download = fileName || 'download';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch {
+    // Ignore download error
+  }
+}
+
 export default function ChatScreen() {
   const colors = useColors();
-  
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Array.isArray(id) ? id[0] : id;
@@ -56,12 +69,29 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [typingSent, setTypingSent] = useState(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const sendTypingRef = useRef(sendTyping);
+
+  const navigateHome = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      navigateHome();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     sendTypingRef.current = sendTyping;
@@ -139,73 +169,69 @@ export default function ChatScreen() {
     }
   };
 
-  const handleDownloadAttachment = (item: ChatMessage) => {
-    if (!item.content.data || typeof document === "undefined") return;
-    const mime = item.content.mimeType ?? "application/octet-stream";
-    const name = item.content.fileName ?? `attachment-${item.id.slice(0, 6)}`;
-    const link = document.createElement("a");
-    link.href = `data:${mime};base64,${item.content.data}`;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const handlePickAttachment = async () => {
+    if (!contactId || uploadingFile) return;
 
-  const handleAttachment = async () => {
-    if (!contactId) return;
-    if (Platform.OS === "web" && typeof document !== "undefined") {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.apk,.csv,.json,*/*";
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.apk,*/*';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+
       input.onchange = async () => {
         const file = input.files?.[0];
+        document.body.removeChild(input);
         if (!file) return;
-        setSending(true);
+
+        setUploadingFile(true);
         try {
-          const mime = (file.type || "").toLowerCase();
-          const kind: "image" | "video" | "audio" | "file" =
-            mime.startsWith("image/")
-              ? "image"
-              : mime.startsWith("video/")
-                ? "video"
-                : mime.startsWith("audio/")
-                  ? "audio"
-                  : "file";
+          const mime = (file.type || '').toLowerCase();
+          let kind: 'image' | 'video' | 'audio' | 'file' = 'file';
+          if (mime.startsWith('image/')) kind = 'image';
+          else if (mime.startsWith('video/')) kind = 'video';
+          else if (mime.startsWith('audio/')) kind = 'audio';
+
           await sendAttachment(contactId, file, kind);
         } catch (error) {
-          const msg = error instanceof Error ? error.message : "Try again.";
-          if (typeof window !== "undefined") window.alert(msg);
-          else Alert.alert("Attachment not sent", msg);
+          const msg = error instanceof Error ? error.message : 'Try again.';
+          if (typeof window !== 'undefined') window.alert(msg);
+          else Alert.alert('Attachment not sent', msg);
         } finally {
-          setSending(false);
+          setUploadingFile(false);
         }
       };
+
       input.click();
       return;
     }
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images", "videos"],
+        mediaTypes: ['images', 'videos'],
         quality: 0.82,
         allowsMultipleSelection: false,
       });
       if (result.canceled || !result.assets[0]) return;
+      setUploadingFile(true);
       const asset = result.assets[0];
       let file = asset.file;
       if (!file) {
         const response = await fetch(asset.uri);
         const blob = await response.blob();
-        file = new File([blob], asset.fileName ?? "attachment", {
-          type: asset.mimeType ?? blob.type ?? "application/octet-stream",
+        file = new File([blob], asset.fileName ?? 'attachment', {
+          type: asset.mimeType ?? blob.type ?? 'application/octet-stream',
         });
       }
-      const isVideo = (asset.type === "video") || (file.type || "").startsWith("video/");
-      await sendAttachment(contactId, file, isVideo ? "video" : "image");
+      const kind = (file.type || '').startsWith('video/') ? 'video' : 'image';
+      await sendAttachment(contactId, file, kind);
     } catch (error) {
       Alert.alert(
-        "Attachment not sent",
-        error instanceof Error ? error.message : "Try again.",
+        'Attachment not sent',
+        error instanceof Error ? error.message : 'Try again.',
       );
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -296,36 +322,76 @@ export default function ChatScreen() {
           ]}
         >
           {item.content.kind === 'image' && item.content.data ? (
-            <Image
-              source={{
-                uri: `data:${item.content.mimeType ?? 'image/jpeg'};base64,${item.content.data}`,
-              }}
-              style={styles.attachmentImage}
-              resizeMode="cover"
-              accessibilityLabel="Shared image"
-            />
+            <Pressable
+              onPress={() =>
+                triggerFileDownload(
+                  item.content.data!,
+                  item.content.mimeType ?? 'image/jpeg',
+                  item.content.fileName ?? 'photo.jpg',
+                )
+              }
+            >
+              <Image
+                source={{
+                  uri: `data:${item.content.mimeType ?? 'image/jpeg'};base64,${item.content.data}`,
+                }}
+                style={styles.attachmentImage}
+                resizeMode="cover"
+                accessibilityLabel="Shared image"
+              />
+            </Pressable>
           ) : null}
-          {item.content.kind === 'audio' && item.content.data ? (
-            <AudioControl
-              data={item.content.data}
-              mimeType={item.content.mimeType ?? 'audio/webm'}
-            />
-          ) : null}
+
           {item.content.kind === 'video' && item.content.data ? (
-            Platform.OS === 'web' ? (
-              <View style={{ marginBottom: 6, borderRadius: 12, overflow: 'hidden' }}>
-                {React.createElement('video', {
+            <View style={{ marginBottom: 6 }}>
+              {Platform.OS === 'web' ? (
+                React.createElement('video', {
                   src: `data:${item.content.mimeType ?? 'video/mp4'};base64,${item.content.data}`,
                   controls: true,
                   playsInline: true,
-                  style: { width: 230, maxHeight: 220, borderRadius: 12, backgroundColor: '#000' },
-                })}
-              </View>
-            ) : null
+                  style: {
+                    width: 230,
+                    maxHeight: 220,
+                    borderRadius: 12,
+                    backgroundColor: '#000',
+                  },
+                })
+              ) : null}
+              <Pressable
+                onPress={() =>
+                  triggerFileDownload(
+                    item.content.data!,
+                    item.content.mimeType ?? 'video/mp4',
+                    item.content.fileName ?? 'video.mp4',
+                  )
+                }
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 6,
+                }}
+              >
+                <Feather name="download" size={13} color={colors.primary} />
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 11.5, fontWeight: '700', color: colors.primary }}
+                >
+                  Save {item.content.fileName ?? 'video.mp4'}
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
+
           {item.content.kind === 'file' && item.content.data ? (
             <Pressable
-              onPress={() => handleDownloadAttachment(item)}
+              onPress={() =>
+                triggerFileDownload(
+                  item.content.data!,
+                  item.content.mimeType ?? 'application/octet-stream',
+                  item.content.fileName ?? 'document',
+                )
+              }
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -341,15 +407,25 @@ export default function ChatScreen() {
             >
               <Feather name="file-text" size={20} color={colors.primary} />
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: colors.foreground }}>
-                  {item.content.fileName ?? 'Document'}
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 13, fontWeight: '700', color: colors.foreground }}
+                >
+                  {item.content.fileName ?? 'Shared Document'}
                 </Text>
                 <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>
-                  Tap to download / open
+                  Tap to download file
                 </Text>
               </View>
               <Feather name="download" size={16} color={colors.primary} />
             </Pressable>
+          ) : null}
+
+          {item.content.kind === 'audio' && item.content.data ? (
+            <AudioControl
+              data={item.content.data}
+              mimeType={item.content.mimeType ?? 'audio/webm'}
+            />
           ) : null}
           {item.content.text ? (
             <Text style={[styles.messageText, { color: colors.foreground }]}>
@@ -402,7 +478,7 @@ export default function ChatScreen() {
         <Text style={{ color: colors.foreground }}>
           This contact is not available on this device.
         </Text>
-        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={{ padding: 15 }}>
+        <Pressable onPress={navigateHome} style={{ padding: 15 }}>
           <Text style={{ color: colors.primary }}>Go back</Text>
         </Pressable>
       </View>
@@ -421,7 +497,7 @@ export default function ChatScreen() {
         ]}
       >
         <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          onPress={navigateHome}
           accessibilityLabel="Back to chats"
           style={styles.backButton}
         >
@@ -567,8 +643,8 @@ export default function ChatScreen() {
 
       {typing[contact.id] ? (
         <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.background }}>
-          <View style={[styles.typingPill, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" }]}>
-            <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+          <View style={[styles.typingPill, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }]}>
+            <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }} />
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, opacity: 0.65 }} />
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, opacity: 0.35 }} />
@@ -595,14 +671,19 @@ export default function ChatScreen() {
       >
         <View style={styles.composerRow}>
           <Pressable
-            onPress={() => void handleAttachment()}
-            accessibilityLabel="Attach photo"
+            onPress={() => void handlePickAttachment()}
+            disabled={uploadingFile}
+            accessibilityLabel="Attach photo, video, or file"
             style={[
               styles.composerIcon,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Feather name="plus" size={20} color={colors.foreground} />
+            {uploadingFile ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather name="plus" size={20} color={colors.foreground} />
+            )}
           </Pressable>
           <TextInput
             value={draft}
@@ -702,26 +783,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: { fontSize: 15, fontWeight: '800' },
   dot: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
     width: 11,
     height: 11,
     borderRadius: 6,
     borderWidth: 2,
-    position: 'absolute',
-    right: -1,
-    bottom: -1,
   },
-  headerCopy: { flex: 1, gap: 2 },
+  headerCopy: { flex: 1, minWidth: 0 },
   contactName: { fontSize: 15, fontWeight: '800' },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  connectionText: { fontSize: 10, fontWeight: '700' },
+  statusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+  },
+  connectionText: { fontSize: 11, fontWeight: '600' },
   headerActionBtn: {
     width: 36,
     height: 36,
@@ -786,7 +872,7 @@ const styles = StyleSheet.create({
     height: 190,
     borderRadius: 12,
     marginBottom: 5,
-    backgroundColor: "transparent",
+    backgroundColor: 'transparent',
   },
   messageText: { fontSize: 14, lineHeight: 20 },
   messageMeta: {
