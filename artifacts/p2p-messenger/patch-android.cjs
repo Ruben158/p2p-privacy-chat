@@ -1,26 +1,37 @@
 const fs = require("fs");
 const path = require("path");
 
-// 1. Add Camera, Microphone, Notifications, ForegroundService & WakeLock permissions to AndroidManifest.xml
+// 1. Add Camera, Microphone, Notifications, ForegroundService & WakeLock permissions without duplicates
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 let manifest = fs.readFileSync(manifestPath, "utf8");
-const perms = [
-  '    <uses-permission android:name="android.permission.CAMERA" />',
-  '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
-  '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
-  '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
-  '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
-  '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />',
-  '    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />',
-  '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
-  '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />',
-  '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
-  '    <uses-feature android:name="android.hardware.microphone" android:required="false" />',
-].join("\n");
+const permList = [
+  "android.permission.CAMERA",
+  "android.permission.RECORD_AUDIO",
+  "android.permission.MODIFY_AUDIO_SETTINGS",
+  "android.permission.POST_NOTIFICATIONS",
+  "android.permission.WAKE_LOCK",
+  "android.permission.ACCESS_WIFI_STATE",
+  "android.permission.CHANGE_WIFI_STATE",
+  "android.permission.FOREGROUND_SERVICE",
+  "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+];
 
-if (!manifest.includes("android.permission.POST_NOTIFICATIONS")) {
-  manifest = manifest.replace("</manifest>", perms + "\n</manifest>");
+const missingPerms = [];
+for (const p of permList) {
+  if (!manifest.includes(p)) {
+    missingPerms.push(`    <uses-permission android:name="${p}" />`);
+  }
 }
+if (!manifest.includes("android.hardware.camera")) {
+  missingPerms.push('    <uses-feature android:name="android.hardware.camera" android:required="false" />');
+}
+if (!manifest.includes("android.hardware.microphone")) {
+  missingPerms.push('    <uses-feature android:name="android.hardware.microphone" android:required="false" />');
+}
+if (missingPerms.length > 0) {
+  manifest = manifest.replace("</manifest>", missingPerms.join("\n") + "\n</manifest>");
+}
+
 if (!manifest.includes("P2PKeepAliveService")) {
   manifest = manifest.replace(
     "</application>",
@@ -29,8 +40,13 @@ if (!manifest.includes("P2PKeepAliveService")) {
 }
 fs.writeFileSync(manifestPath, manifest, "utf8");
 
-// 2. Copy permanent keystore into android/app/ and force Gradle to sign with it + increment versionCode
-fs.copyFileSync("p2p-release.keystore", "android/app/p2p-release.keystore");
+// 2. Copy permanent keystore into android/app/ and configure Gradle signing + versionCode
+const keystoreSrc = fs.existsSync("p2p-release.keystore")
+  ? "p2p-release.keystore"
+  : "android/app/debug.keystore";
+if (fs.existsSync(keystoreSrc)) {
+  fs.copyFileSync(keystoreSrc, "android/app/p2p-release.keystore");
+}
 
 const gradlePath = "android/app/build.gradle";
 let gradle = fs.readFileSync(gradlePath, "utf8");
@@ -38,7 +54,7 @@ const runNum = parseInt(process.env.BUILD_NUMBER || "100", 10) + 500;
 gradle = gradle.replace(/versionCode\s+\d+/, "versionCode " + runNum);
 gradle = gradle.replace(/versionName\s+"[^"]*"/, 'versionName "1.0.' + (process.env.BUILD_NUMBER || "1") + '"');
 
-if (!gradle.includes("p2p-release.keystore")) {
+if (!gradle.includes("p2p-release.keystore") && fs.existsSync("android/app/p2p-release.keystore")) {
   const signingSetup = [
     "    signingConfigs {",
     "        debug {",
@@ -359,31 +375,22 @@ if (mainActPath) {
 }
 console.log("Patched Android native file chooser, back handler, foreground service, and notifications.");
 
-
-// 4. Generate Light & Dark Android Launcher Icons across all mipmap densities
+// 4. Generate Light & Dark Android Launcher Icons using valid aapt2 resource qualifier order (night before density)
 try {
-  const { execSync } = require("child_process");
   const resDir = "android/app/src/main/res";
-  const densities = [
-    { name: "mdpi", size: 48, fg: 108 },
-    { name: "hdpi", size: 72, fg: 162 },
-    { name: "xhdpi", size: 96, fg: 216 },
-    { name: "xxhdpi", size: 144, fg: 324 },
-    { name: "xxxhdpi", size: 192, fg: 432 },
-  ];
-
+  const densities = ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"];
   const darkPng = "assets/images/icon-dark.png";
   const lightPng = "assets/images/icon-light.png";
 
   if (fs.existsSync(darkPng) && fs.existsSync(lightPng)) {
     fs.mkdirSync(resDir + "/drawable", { recursive: true });
-    fs.mkdirSync(resDir + "/drawable-night-v8", { recursive: true });
+    fs.mkdirSync(resDir + "/drawable-night", { recursive: true });
     fs.copyFileSync(lightPng, resDir + "/drawable/ic_launcher_theme.png");
-    fs.copyFileSync(darkPng, resDir + "/drawable-night-v8/ic_launcher_theme.png");
+    fs.copyFileSync(darkPng, resDir + "/drawable-night/ic_launcher_theme.png");
 
     for (const d of densities) {
-      const mipDir = resDir + "/mipmap-" + d.name;
-      const nightMipDir = resDir + "/mipmap-" + d.name + "-night-v8";
+      const mipDir = resDir + "/mipmap-" + d;
+      const nightMipDir = resDir + "/mipmap-night-" + d;
       fs.mkdirSync(mipDir, { recursive: true });
       fs.mkdirSync(nightMipDir, { recursive: true });
 
