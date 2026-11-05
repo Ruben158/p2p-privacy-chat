@@ -17,14 +17,32 @@ if (!manifest.includes("android.permission.CAMERA")) {
   fs.writeFileSync(manifestPath, manifest, "utf8");
 }
 
-// 2. Increment versionCode in android/app/build.gradle so updates install cleanly over existing APKs
+// 2. Copy permanent keystore into android/app/ and force Gradle to sign with it + increment versionCode
+fs.copyFileSync("p2p-release.keystore", "android/app/p2p-release.keystore");
+
 const gradlePath = "android/app/build.gradle";
 let gradle = fs.readFileSync(gradlePath, "utf8");
-const runNum = parseInt(process.env.BUILD_NUMBER || "100", 10) + 100;
+const runNum = parseInt(process.env.BUILD_NUMBER || "100", 10) + 500;
 gradle = gradle.replace(/versionCode\s+\d+/, "versionCode " + runNum);
+gradle = gradle.replace(/versionName\s+"[^"]*"/, 'versionName "1.0.' + (process.env.BUILD_NUMBER || "1") + '"');
+
+if (!gradle.includes("p2p-release.keystore")) {
+  const signingSetup = [
+    "    signingConfigs {",
+    "        debug {",
+    "            storeFile file('p2p-release.keystore')",
+    "            storePassword 'android'",
+    "            keyAlias 'androiddebugkey'",
+    "            keyPassword 'android'",
+    "        }",
+    "    }",
+    "    defaultConfig {",
+  ].join("\n");
+  gradle = gradle.replace("    defaultConfig {", signingSetup);
+}
 fs.writeFileSync(gradlePath, gradle, "utf8");
 
-// 3. Patch MainActivity.java to request runtime Camera/Mic permissions & enable autoplay for WebRTC audio/video
+// 3. Patch MainActivity.java for runtime Camera/Mic permissions & WebRTC autoplay
 function findMainActivity(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -98,4 +116,4 @@ if (mainActPath) {
   ].join("\n");
   fs.writeFileSync(mainActPath, patchedMain, "utf8");
 }
-console.log("Android permissions, versionCode, and MainActivity WebRTC permissions patched cleanly.");
+console.log("Permanent keystore signing, versionCode, permissions, and MainActivity patched.");
