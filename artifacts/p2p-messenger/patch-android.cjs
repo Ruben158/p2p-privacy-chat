@@ -358,3 +358,55 @@ if (mainActPath) {
   fs.writeFileSync(mainActPath, patchedMain, "utf8");
 }
 console.log("Patched Android native file chooser, back handler, foreground service, and notifications.");
+
+
+// 4. Generate Light & Dark Android Launcher Icons across all mipmap densities
+try {
+  const { execSync } = require("child_process");
+  const resDir = "android/app/src/main/res";
+  const densities = [
+    { name: "mdpi", size: 48, fg: 108 },
+    { name: "hdpi", size: 72, fg: 162 },
+    { name: "xhdpi", size: 96, fg: 216 },
+    { name: "xxhdpi", size: 144, fg: 324 },
+    { name: "xxxhdpi", size: 192, fg: 432 },
+  ];
+
+  const darkPng = "assets/images/icon-dark.png";
+  const lightPng = "assets/images/icon-light.png";
+
+  if (fs.existsSync(darkPng) && fs.existsSync(lightPng)) {
+    fs.mkdirSync(resDir + "/drawable", { recursive: true });
+    fs.mkdirSync(resDir + "/drawable-night-v8", { recursive: true });
+    fs.copyFileSync(lightPng, resDir + "/drawable/ic_launcher_theme.png");
+    fs.copyFileSync(darkPng, resDir + "/drawable-night-v8/ic_launcher_theme.png");
+
+    for (const d of densities) {
+      const mipDir = resDir + "/mipmap-" + d.name;
+      const nightMipDir = resDir + "/mipmap-" + d.name + "-night-v8";
+      fs.mkdirSync(mipDir, { recursive: true });
+      fs.mkdirSync(nightMipDir, { recursive: true });
+
+      for (const name of ["ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png"]) {
+        fs.copyFileSync(lightPng, mipDir + "/" + name);
+        fs.copyFileSync(darkPng, nightMipDir + "/" + name);
+      }
+    }
+
+    const adaptiveXml = [
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+      "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">",
+      "    <background android:drawable=\"@drawable/ic_launcher_theme\"/>",
+      "    <foreground android:drawable=\"@drawable/ic_launcher_theme\"/>",
+      "</adaptive-icon>",
+    ].join("\n");
+
+    const anyDpiDir = resDir + "/mipmap-anydpi-v26";
+    fs.mkdirSync(anyDpiDir, { recursive: true });
+    fs.writeFileSync(anyDpiDir + "/ic_launcher.xml", adaptiveXml, "utf8");
+    fs.writeFileSync(anyDpiDir + "/ic_launcher_round.xml", adaptiveXml, "utf8");
+    console.log("Installed Light & Dark adaptive Android launcher icons.");
+  }
+} catch (err) {
+  console.warn("Icon patch warning:", err.message);
+}
