@@ -4,6 +4,9 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -115,9 +118,26 @@ jobs:
           cd artifacts/p2p-messenger/android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/p2p-messenger-v1.0.${{ github.run_number }}.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "P2P Privacy Messenger v1.0.${{ github.run_number }}"
+          body: |
+            ### P2P Privacy Messenger — Direct APK Release (Build #${{ github.run_number }})
+            - **5 Brand Themes (Light & Dark):** Tech Startup, Classy Coral, Calm Branded, Sakura Rose, Minimal Playful
+            - **Consistent Signing & Auto-Upgrade:** Signed with cached persistent keystore (`versionCode` auto-incremented)
+            - **Camera & Audio Enabled:** Native runtime permissions & WebRTC media bridge enabled
+          files: |
+            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/p2p-messenger-v1.0.${{ github.run_number }}.apk
+            artifacts/p2p-messenger/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
